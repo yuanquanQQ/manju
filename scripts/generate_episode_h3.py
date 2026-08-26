@@ -1,0 +1,274 @@
+"""Resume-safe MiniMax H3 generation for one complete episode."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from dotenv import dotenv_values
+
+from app.domain.video import EpisodeClipSpec, VideoRenderSpec
+from app.services.desktop_service import DesktopProjectService
+from app.services.gpu_service import GpuConnection, GpuServerService
+from app.services.video_service import VideoRenderService
+from workflows.minimax_h3.generate_video import H3_MODEL, H3_TEXT_ENCODER
+
+
+def _ssh_password(path: Path) -> str:
+    lines = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8-sig").splitlines()
+        if line.strip()
+    ]
+    candidates = [line for line in lines if "ssh " not in line.lower()]
+    if not candidates:
+        raise RuntimeError(f"No password entry found in {path}")
+    password = candidates[-1]
+    for separator in (":", "="):
+        if separator not in password:
+            continue
+        label, value = password.split(separator, 1)
+        if label.strip().lower() in {"password", "pass", "pwd"}:
+            password = value.strip()
+            break
+    return password
+
+
+def _read_episode(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _valid_h3_candidate(project_root: Path, shot: dict) -> tuple[Path, Path] | None:
+    video = shot.get("video_generation") or {}
+    selected_value = str(video.get("selected_video") or "")
+    if not selected_value:
+        return None
+    selected = (project_root / selected_value).resolve()
+    valid: list[tuple[Path, Path]] = []
+    for item in video.get("candidates") or []:
+        if not isinstance(item, dict):
+            continue
+        clip = project_root / str(item.get("file") or "")
+        manifest = project_root / str(item.get("manifest") or "")
+        if clip.resolve() != selected:
+            continue
+        if not clip.is_file() or not manifest.is_file():
+            continue
+        try:
+            metadata = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if (
+            metadata.get("engine_profile") == "minimax_h3_fl2va"
+            and metadata.get("model_name") == H3_MODEL
+            and metadata.get("text_encoder") == H3_TEXT_ENCODER
+        ):
+            valid.append((clip.resolve(), manifest.resolve()))
+    return max(valid, key=lambda item: item[0].stat().st_mtime) if valid else None
+
+
+def _pending_h3_candidates(project_root: Path, shot: dict) -> list[Path]:
+    """Return technically valid candidates that still need human review."""
+
+    video = shot.get("video_generation") or {}
+    pending: list[Path] = []
+    for item in video.get("candidates") or []:
+        if not isinstance(item, dict):
+            continue
+        clip = project_root / str(item.get("file") or "")
+        manifest = project_root / str(item.get("manifest") or "")
+        if not clip.is_file() or not manifest.is_file():
+            continue
+        try:
+            metadata = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if (
+            metadata.get("engine_profile") == "minimax_h3_fl2va"
+            and metadata.get("model_name") == H3_MODEL
+            and metadata.get("text_encoder") == H3_TEXT_ENCODER
+            and metadata.get("approval_status")
+            == "pending_visual_motion_audio_review"
+            and (metadata.get("technical_qc") or {}).get("technical_pass") is True
+        ):
+            pending.append(clip.resolve())
+    return pending
+
+
+def _video_spec(project_root: Path, episode_number: int, shot: dict) -> VideoRenderSpec:
+    video = shot.get("video_generation") or {}
+    source = (project_root / str(video.get("source_image") or "")).resolve()
+    end_value = str(video.get("end_image") or "")
+    return VideoRenderSpec(
+        episode_number=episode_number,
+        shot_number=int(shot["shot_number"]),
+        source_image=source,
+        end_image=(project_root / end_value).resolve() if end_value else None,
+        scene_description=str(shot.get("scene_description") or ""),
+        subject_motion=str(video.get("subject_motion") or ""),
+        environment_motion=str(video.get("environment_motion") or ""),
+        continuity_constraints=str(video.get("continuity_constraints") or ""),
+        negative_prompt=str(video.get("negative_prompt") or ""),
+        motion_prompt=str(video.get("motion_prompt") or ""),
+        native_audio_mode=str(
+            video.get("native_audio_mode") or "ambience_sfx_music"
+        ),
+        dialogue_prompt=str(video.get("dialogue_prompt") or ""),
+        sound_effect_prompt=str(video.get("sound_effect_prompt") or ""),
+        music_prompt=str(video.get("music_prompt") or ""),
+        camera_movement=str(video.get("camera_movement") or "auto"),
+        motion_strength=str(video.get("motion_strength") or "low"),
+        screen_direction=str(video.get("screen_direction") or "auto"),
+        transition_out=str(video.get("transition_out") or "cut"),
+        transition_frames=int(video.get("transition_frames") or 0),
+        handle_frames=int(video.get("handle_frames") or 0),
+        candidate_count=max(2, min(int(video.get("candidate_count") or 2), 4)),
+        duration_seconds=float(
+            video.get("duration_seconds") or shot.get("duration_seconds") or 3.0
+        ),
+        fps=24,
+        width=832,
+        height=480,
+        engine_profile="minimax_h3_fl2va",
+    )
+
+
+def run(project_slug: str, episode_number: int, workspace: Path) -> Path:
+    projects_dir = workspace / "projects"
+    project_root = (projects_dir / project_slug).resolve()
+    episode_path = (
+        project_root
+        / "production"
+        / "episodes"
+        / f"episode_{episode_number:03d}.json"
+    )
+    project_service = DesktopProjectService(projects_dir)
+    gpu_service = GpuServerService()
+
+    env = dotenv_values(workspace / ".env")
+    config = GpuConnection(
+        host=str(env.get("GPU_SSH_HOST") or ""),
+        port=int(env.get("GPU_SSH_PORT") or 22),
+        username=str(env.get("GPU_SSH_USER") or "root"),
+        password=_ssh_password(workspace / "ssh.txt"),
+    )
+
+    episode = _read_episode(episode_path)
+    shots = sorted(episode.get("shots") or [], key=lambda item: item["shot_number"])
+    if not shots:
+        raise RuntimeError(f"Episode has no shots: {episode_path}")
+
+    for shot in shots:
+        shot_number = int(shot["shot_number"])
+        existing = _valid_h3_candidate(project_root, shot)
+        if existing:
+            project_service.save_shot_video_result(
+                project_slug,
+                episode_number,
+                shot_number,
+                existing[0],
+                existing[1],
+                select=True,
+            )
+            print(f"[SKIP] shot={shot_number:03d} valid_h3_candidate", flush=True)
+            continue
+
+        pending = _pending_h3_candidates(project_root, shot)
+        if pending:
+            print(
+                f"[REVIEW_REQUIRED] shot={shot_number:03d} candidates={len(pending)}",
+                flush=True,
+            )
+            continue
+
+        qc_status = str((shot.get("image_generation") or {}).get("qc_status") or "")
+        if qc_status != "approved":
+            raise RuntimeError(
+                f"Shot {shot_number:03d} has no H3 candidate and keyframe QC is {qc_status!r}"
+            )
+
+        spec = _video_spec(project_root, episode_number, shot)
+
+        def progress(percent: int, _message: str, number: int = shot_number) -> None:
+            print(f"[PROGRESS] shot={number:03d} percent={percent}", flush=True)
+
+        def persist(clip) -> None:
+            project_service.save_shot_video_result(
+                project_slug,
+                clip.episode_number,
+                clip.shot_number,
+                clip.video_path,
+                clip.manifest_path,
+                select=False,
+            )
+            print(f"[SAVED] shot={clip.shot_number:03d} file={clip.video_path}", flush=True)
+
+        print(f"[START] shot={shot_number:03d}", flush=True)
+        gpu_service.generate_h3_videos(
+            config,
+            project_root,
+            [spec],
+            progress_callback=progress,
+            clip_callback=persist,
+        )
+        episode = _read_episode(episode_path)
+        shots = sorted(
+            episode.get("shots") or [], key=lambda item: item["shot_number"]
+        )
+
+    episode = _read_episode(episode_path)
+    timeline: list[EpisodeClipSpec] = []
+    missing: list[int] = []
+    for shot in sorted(
+        episode.get("shots") or [], key=lambda item: item["shot_number"]
+    ):
+        video = shot.get("video_generation") or {}
+        selected = project_root / str(video.get("selected_video") or "")
+        if not selected.is_file():
+            missing.append(int(shot["shot_number"]))
+            continue
+        timeline.append(
+            EpisodeClipSpec(
+                path=selected.resolve(),
+                shot_number=int(shot["shot_number"]),
+                duration_seconds=float(
+                    video.get("duration_seconds")
+                    or shot.get("duration_seconds")
+                    or 3.0
+                ),
+                transition_out=str(video.get("transition_out") or "cut"),
+                transition_frames=int(video.get("transition_frames") or 0),
+            )
+        )
+    if missing:
+        raise RuntimeError(
+            "H3 candidates are generated but cannot be composed before human "
+            f"motion/identity/audio review; unselected shots: {missing}"
+        )
+
+    print(f"[COMPOSE] clips={len(timeline)}", flush=True)
+    result = VideoRenderService().compose_episode(
+        project_root,
+        episode_number,
+        timeline,
+        progress_callback=lambda percent, _message: print(
+            f"[COMPOSE_PROGRESS] percent={percent}", flush=True
+        ),
+    )
+    print(f"[DONE] episode={result.video_path}", flush=True)
+    print(f"[MANIFEST] episode={result.manifest_path}", flush=True)
+    return result.video_path
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--project", default="jueshi")
+    parser.add_argument("--episode", type=int, default=1)
+    parser.add_argument("--workspace", type=Path, default=Path.cwd())
+    args = parser.parse_args()
+    run(args.project, args.episode, args.workspace.resolve())
+
+
+if __name__ == "__main__":
+    main()

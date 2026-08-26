@@ -1,0 +1,2187 @@
+{
+  "after_chapter": 10,
+  "generated_at": "2026-07-22T16:08:47.462893",
+  "trigger": "new_only",
+  "profiles": [
+    {
+      "identity": {
+        "canonical_name": "安昊尘",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "安昊尘_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:01:06.758742"
+    },
+    {
+      "identity": {
+        "canonical_name": "收药队使者",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "收药队使者_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:01:06.761326"
+    },
+    {
+      "identity": {
+        "canonical_name": "林家仆役",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "林家仆役_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:01:06.761373"
+    },
+    {
+      "identity": {
+        "canonical_name": "林家兄妹（提及）",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "林家兄妹（提及）_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:01:06.761408"
+    },
+    {
+      "identity": {
+        "canonical_name": "林家耳目",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "林家耳目_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:01:06.761439"
+    },
+    {
+      "identity": {
+        "canonical_name": "林权",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "林权_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:03:31.499941"
+    },
+    {
+      "identity": {
+        "canonical_name": "林浪",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "林浪_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:03:31.499977"
+    },
+    {
+      "identity": {
+        "canonical_name": "林浪（提及）",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "林浪（提及）_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:03:31.499993"
+    },
+    {
+      "identity": {
+        "canonical_name": "林淑婉",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "林淑婉_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:03:31.500009"
+    },
+    {
+      "identity": {
+        "canonical_name": "林淑婉（回忆/提及）",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "林淑婉（回忆/提及）_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:03:31.500025"
+    },
+    {
+      "identity": {
+        "canonical_name": "百姓",
+        "aliases": [
+          "百姓"
+        ],
+        "name_forms": {},
+        "gender": "unknown",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": {
+          "born_chapter": null,
+          "death_chapter": null,
+          "reincarnated_into": null
+        }
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "bai_min_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 8,
+      "appearance_chapters": [],
+      "mention_resolution": [
+        [
+          8,
+          "百姓",
+          "百姓"
+        ]
+      ],
+      "last_updated_chapter": 8,
+      "last_updated_at": "2026-07-22T16:03:31.500093"
+    },
+    {
+      "identity": {
+        "canonical_name": "矿工",
+        "aliases": [
+          "矿工"
+        ],
+        "name_forms": {},
+        "gender": "unknown",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": {
+          "born_chapter": null,
+          "death_chapter": null,
+          "reincarnated_into": null
+        }
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "kong_gong_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 8,
+      "appearance_chapters": [],
+      "mention_resolution": [
+        [
+          8,
+          "矿工",
+          "矿工"
+        ]
+      ],
+      "last_updated_chapter": 8,
+      "last_updated_at": "2026-07-22T16:03:31.500093"
+    },
+    {
+      "identity": {
+        "canonical_name": "矿工家属",
+        "aliases": [
+          "矿工家属"
+        ],
+        "name_forms": {},
+        "gender": "unknown",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": {
+          "born_chapter": null,
+          "death_chapter": null,
+          "reincarnated_into": null
+        }
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "kong_gong_jiazu_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 7,
+      "appearance_chapters": [],
+      "mention_resolution": [
+        [
+          7,
+          "矿工家属",
+          "矿工家属"
+        ]
+      ],
+      "last_updated_chapter": 7,
+      "last_updated_at": "2026-07-22T16:03:31.500093"
+    },
+    {
+      "identity": {
+        "canonical_name": "秦万里",
+        "aliases": [
+          "秦万里"
+        ],
+        "name_forms": {},
+        "gender": "男",
+        "species": "human",
+        "age_arc": [
+          {
+            "stage": "中年",
+            "chapter_range": [
+              7,
+              10
+            ],
+            "description": "中年男性，体态稳健"
+          }
+        ],
+        "lifecycle": {
+          "born_chapter": null,
+          "death_chapter": null,
+          "reincarnated_into": null
+        }
+      },
+      "appearance": {
+        "hair": {
+          "value": "灰白色短发，略显凌乱",
+          "confidence": 0.4,
+          "observed_in_chapters": [
+            7
+          ]
+        },
+        "eyes": {
+          "value": "深褐色眼眸",
+          "confidence": 0.5,
+          "observed_in_chapters": [
+            7
+          ]
+        },
+        "body_type": {
+          "value": "中等身材，体态稳健",
+          "confidence": 0.6,
+          "observed_in_chapters": [
+            7
+          ]
+        },
+        "height": {
+          "value": "约 178 cm",
+          "confidence": 0.5,
+          "observed_in_chapters": [
+            7
+          ]
+        },
+        "skin_tone": {
+          "value": "偏黄",
+          "confidence": 0.5,
+          "observed_in_chapters": [
+            7
+          ]
+        },
+        "facial_features": {
+          "value": "轮廓分明，眉宇间有威严",
+          "confidence": 0.6,
+          "observed_in_chapters": [
+            7
+          ]
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [
+          {
+            "label": "中年士绅装",
+            "chapter_range": [
+              7,
+              10
+            ],
+            "description": "深蓝色长袍，外罩浅灰长衫，腰束宽带",
+            "color_palette": [
+              "#003366",
+              "#888888"
+            ]
+          }
+        ],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": [
+          "#003366",
+          "#888888"
+        ]
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [
+          "calm",
+          "determined"
+        ],
+        "hair_style_variants": [
+          "short",
+          "wavy"
+        ]
+      },
+      "positive_tags": [
+        "middle-aged man",
+        "gray hair",
+        "deep brown eyes",
+        "sturdy build",
+        "pale yellow skin",
+        "blue long robe",
+        "gray outer shirt",
+        "wide belt",
+        "chinese clothing",
+        "xianxia",
+        "cultivation world",
+        "martial arts",
+        "outdoor",
+        "natural lighting"
+      ],
+      "negative_tags": [
+        "blurry",
+        "deformed",
+        "extra fingers",
+        "modern clothing"
+      ],
+      "style_negative_tags": [
+        "lowres",
+        "anime",
+        "western",
+        "realistic photo"
+      ],
+      "sample_captions": [
+        "qin_wanli_xianxia, middle-aged man, gray hair, deep brown eyes, sturdy build, pale yellow skin, wearing blue long robe with gray outer shirt and wide belt, standing in courtyard, natural lighting",
+        "qin_wanli_xianxia, middle-aged man, gray short hair, serious expression, blue robe, in front of stone gate, outdoor scene, daytime",
+        "qin_wanli_xianxia, middle-aged man, deep brown eyes, strong posture, blue and gray attire, calm expression, standing beside a large door, soft sunlight"
+      ],
+      "lora_trigger_token": "qin_wanli_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 7,
+      "appearance_chapters": [
+        7,
+        8,
+        9
+      ],
+      "mention_resolution": [
+        [
+          7,
+          "秦万里",
+          "秦万里"
+        ],
+        [
+          8,
+          "秦万里",
+          "秦万里"
+        ],
+        [
+          9,
+          "秦万里",
+          "秦万里"
+        ]
+      ],
+      "last_updated_chapter": 10,
+      "last_updated_at": "2026-07-22T16:03:31.500093"
+    },
+    {
+      "identity": {
+        "canonical_name": "秦三秋",
+        "aliases": [
+          "秦三秋"
+        ],
+        "name_forms": {},
+        "gender": "男",
+        "species": "human",
+        "age_arc": [
+          {
+            "stage": "少年",
+            "chapter_range": [
+              1,
+              10
+            ],
+            "description": "16岁左右，体格健壮"
+          }
+        ],
+        "lifecycle": {
+          "born_chapter": 1,
+          "death_chapter": null,
+          "reincarnated_into": null
+        }
+      },
+      "appearance": {
+        "hair": {
+          "value": "黑色短发，略带油光",
+          "confidence": 0.9,
+          "observed_in_chapters": [
+            1,
+            2,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        },
+        "eyes": {
+          "value": "深褐色眼眸",
+          "confidence": 0.8,
+          "observed_in_chapters": [
+            1,
+            2,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        },
+        "body_type": {
+          "value": "健壮体格，偏壮实",
+          "confidence": 0.8,
+          "observed_in_chapters": [
+            1,
+            2,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        },
+        "height": {
+          "value": "约 170 cm",
+          "confidence": 0.7,
+          "observed_in_chapters": [
+            1,
+            2,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        },
+        "skin_tone": {
+          "value": "偏白",
+          "confidence": 0.7,
+          "observed_in_chapters": [
+            1,
+            2,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        },
+        "facial_features": {
+          "value": "脸型方正，轮廓分明",
+          "confidence": 0.8,
+          "observed_in_chapters": [
+            1,
+            2,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [
+          {
+            "label": "药庐学徒服",
+            "chapter_range": [
+              1,
+              5
+            ],
+            "description": "浅绿色麻布衣，腰束布带，脚穿布鞋",
+            "color_palette": [
+              "#66CC66",
+              "#333333"
+            ]
+          },
+          {
+            "label": "铁矿巡查服",
+            "chapter_range": [
+              6,
+              10
+            ],
+            "description": "深褐色粗布衣，外罩灰布披风，腰束皮带",
+            "color_palette": [
+              "#553322",
+              "#444444"
+            ]
+          }
+        ],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": [
+          "#66CC66",
+          "#553322"
+        ]
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [
+          "determined",
+          "calm"
+        ],
+        "hair_style_variants": [
+          "short",
+          "wavy"
+        ]
+      },
+      "positive_tags": [
+        "young man",
+        "black short hair",
+        "deep brown eyes",
+        "robust build",
+        "pale skin",
+        "green cloth robe",
+        "brown coarse robe",
+        "gray outer cloak",
+        "brown belt",
+        "chinese clothing",
+        "xianxia",
+        "cultivation world",
+        "martial arts",
+        "outdoor",
+        "natural lighting"
+      ],
+      "negative_tags": [
+        "blurry",
+        "deformed",
+        "extra fingers",
+        "modern clothing"
+      ],
+      "style_negative_tags": [
+        "lowres",
+        "anime",
+        "western",
+        "realistic photo"
+      ],
+      "sample_captions": [
+        "qin_sanqiu_xianxia, young man, black short hair, deep brown eyes, robust build, pale skin, wearing green cloth robe with brown belt, in a herbal garden, natural lighting",
+        "qin_sanqiu_xianxia, young man, black hair, deep brown eyes, strong build, pale skin, wearing dark brown coarse robe with gray outer cloak, standing in iron mine entrance, outdoor scene",
+        "qin_sanqiu_xianxia, young man, deep brown eyes, strong posture, green and brown attire, calm expression, in front of a collapsed tunnel, soft sunlight"
+      ],
+      "lora_trigger_token": "qin_sanqiu_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 1,
+      "appearance_chapters": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "mention_resolution": [
+        [
+          1,
+          "秦三秋",
+          "秦三秋"
+        ],
+        [
+          2,
+          "秦三秋",
+          "秦三秋"
+        ],
+        [
+          4,
+          "秦三秋",
+          "秦三秋"
+        ],
+        [
+          5,
+          "秦三秋",
+          "秦三秋"
+        ],
+        [
+          6,
+          "秦三秋",
+          "秦三秋"
+        ],
+        [
+          7,
+          "秦三秋",
+          "秦三秋"
+        ],
+        [
+          8,
+          "秦三秋",
+          "秦三秋"
+        ],
+        [
+          9,
+          "秦三秋",
+          "秦三秋"
+        ],
+        [
+          10,
+          "秦三秋",
+          "秦三秋"
+        ]
+      ],
+      "last_updated_chapter": 10,
+      "last_updated_at": "2026-07-22T16:03:31.500093"
+    },
+    {
+      "identity": {
+        "canonical_name": "秦家护卫乙",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "秦家护卫乙_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:08:06.140881"
+    },
+    {
+      "identity": {
+        "canonical_name": "秦家护卫甲",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "秦家护卫甲_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:08:06.140997"
+    },
+    {
+      "identity": {
+        "canonical_name": "秦戮",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "秦戮_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:08:06.141076"
+    },
+    {
+      "identity": {
+        "canonical_name": "秦文松",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "秦文松_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:08:06.141152"
+    },
+    {
+      "identity": {
+        "canonical_name": "秦文长老",
+        "aliases": [],
+        "name_forms": {},
+        "gender": "",
+        "species": "human",
+        "age_arc": [],
+        "lifecycle": null
+      },
+      "appearance": {
+        "hair": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "",
+          "confidence": 1.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [],
+        "hair_style_variants": []
+      },
+      "positive_tags": [],
+      "negative_tags": [],
+      "style_negative_tags": [],
+      "sample_captions": [],
+      "lora_trigger_token": "秦文长老_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 0,
+      "appearance_chapters": [],
+      "mention_resolution": [],
+      "last_updated_chapter": 0,
+      "last_updated_at": "2026-07-22T16:08:06.141225"
+    },
+    {
+      "identity": {
+        "canonical_name": "秦风",
+        "aliases": [
+          "秦风"
+        ],
+        "name_forms": {},
+        "gender": "男",
+        "species": "human",
+        "age_arc": [
+          {
+            "stage": "少年",
+            "chapter_range": [
+              1,
+              10
+            ],
+            "description": "16岁左右，体态清瘦"
+          }
+        ],
+        "lifecycle": {
+          "born_chapter": 1,
+          "death_chapter": null,
+          "reincarnated_into": null
+        }
+      },
+      "appearance": {
+        "hair": {
+          "value": "黑色短发，略带凌乱",
+          "confidence": 0.8,
+          "observed_in_chapters": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        },
+        "eyes": {
+          "value": "深褐色眼眸，眼神锐利",
+          "confidence": 0.9,
+          "observed_in_chapters": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        },
+        "body_type": {
+          "value": "清瘦体型，肌肉线条明显",
+          "confidence": 0.8,
+          "observed_in_chapters": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        },
+        "height": {
+          "value": "约 178 cm",
+          "confidence": 0.6,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "偏白，略带青涩感",
+          "confidence": 0.7,
+          "observed_in_chapters": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        },
+        "facial_features": {
+          "value": "轮廓分明，下颌线条清晰，眉骨微凸",
+          "confidence": 0.8,
+          "observed_in_chapters": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        },
+        "distinguishing_marks": [
+          {
+            "value": "左眉有细小疤痕，疑似战斗留痕",
+            "confidence": 1.0,
+            "observed_in_chapters": []
+          }
+        ],
+        "outfit_variants": [
+          {
+            "label": "少年期外袍",
+            "chapter_range": [
+              1,
+              5
+            ],
+            "description": "浅青色道袍，衣角微卷，腰间束布带",
+            "color_palette": [
+              "#80C8A0",
+              "#4A6D4A"
+            ]
+          },
+          {
+            "label": "筑基后道袍",
+            "chapter_range": [
+              6,
+              10
+            ],
+            "description": "深灰道袍，袖口绣有符文纹样，外罩玄色披风",
+            "color_palette": [
+              "#444444",
+              "#2C2C2C",
+              "#5A5A5A"
+            ]
+          }
+        ],
+        "weapons": [
+          {
+            "value": "一柄青锋长剑，剑柄缠红布带",
+            "confidence": 0.95,
+            "observed_in_chapters": [
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ]
+          }
+        ],
+        "accessories": [
+          {
+            "value": "左腕佩戴一枚铜制符牌，刻有‘聚元’二字",
+            "confidence": 1.0,
+            "observed_in_chapters": []
+          }
+        ],
+        "color_palette": [
+          "#80C8A0",
+          "#4A6D4A",
+          "#444444",
+          "#2C2C2C"
+        ]
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side",
+          "back"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [
+          "calm",
+          "determined",
+          "focused",
+          "guarded"
+        ],
+        "hair_style_variants": [
+          "short",
+          "wavy",
+          "slightly messy"
+        ]
+      },
+      "positive_tags": [
+        "young man",
+        "black hair",
+        "short hair",
+        "dark brown eyes",
+        "slim build",
+        "pale skin",
+        "sharp facial features",
+        "wavy hair",
+        "tied hair",
+        "daoist robe",
+        "light green robe",
+        "gray robe",
+        "dark iron sword",
+        "red cord on sword",
+        "copper talisman",
+        "cultivation world",
+        "xianxia",
+        "martial arts",
+        "outdoor",
+        "natural lighting",
+        "focused expression",
+        "determined look",
+        "martial arts arena",
+        "quiet stance",
+        "standing pose",
+        "realistic style",
+        "high detail",
+        "detailed face",
+        "clear eyes",
+        "strong posture",
+        "mildly scarred",
+        "symbolic tattoo",
+        "symbolic emblem"
+      ],
+      "negative_tags": [
+        "blurry",
+        "deformed",
+        "extra fingers",
+        "modern clothing",
+        "anime style",
+        "western clothing",
+        "overly cartoonish",
+        "flat lighting"
+      ],
+      "style_negative_tags": [
+        "lowres",
+        "anime",
+        "western",
+        "realistic photo",
+        "overly stylized"
+      ],
+      "sample_captions": [
+        "qin_feng_xianxia, young man, 16yo, black short hair, dark brown eyes, slim build, pale skin, wearing light green daoist robe with woven sleeves, red cord on sword, copper talisman on left wrist, standing in cultivation arena, natural lighting, focused expression",
+        "qin_feng_xianxia, young man, dark brown eyes, sharp facial features, short messy hair, wearing gray robe with symbolic pattern, holding dark iron sword, standing in outdoor garden, calm expression, soft sunlight",
+        "qin_feng_xianxia, young man, black hair, deep brown eyes, slender frame, pale complexion, wearing deep gray robe with red trim, standing in stone courtyard, sword at side, guarded posture, three-quarter view"
+      ],
+      "lora_trigger_token": "qin_feng_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 1,
+      "appearance_chapters": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "mention_resolution": [
+        [
+          1,
+          "秦风",
+          "秦风"
+        ],
+        [
+          2,
+          "秦风",
+          "秦风"
+        ],
+        [
+          3,
+          "秦风",
+          "秦风"
+        ],
+        [
+          4,
+          "秦风",
+          "秦风"
+        ],
+        [
+          5,
+          "秦风",
+          "秦风"
+        ],
+        [
+          6,
+          "秦风",
+          "秦风"
+        ],
+        [
+          7,
+          "秦风",
+          "秦风"
+        ],
+        [
+          8,
+          "秦风",
+          "秦风"
+        ],
+        [
+          9,
+          "秦风",
+          "秦风"
+        ],
+        [
+          10,
+          "秦风",
+          "秦风"
+        ]
+      ],
+      "last_updated_chapter": 10,
+      "last_updated_at": "2026-07-22T16:08:06.141373"
+    },
+    {
+      "identity": {
+        "canonical_name": "秦风未婚妻",
+        "aliases": [
+          "秦风未婚妻"
+        ],
+        "name_forms": {},
+        "gender": "女",
+        "species": "human",
+        "age_arc": [
+          {
+            "stage": "少女",
+            "chapter_range": [
+              5,
+              10
+            ],
+            "description": "17岁左右，体态清秀"
+          }
+        ],
+        "lifecycle": {
+          "born_chapter": null,
+          "death_chapter": null,
+          "reincarnated_into": null
+        }
+      },
+      "appearance": {
+        "hair": {
+          "value": "长发及肩，乌黑如墨，常挽成双髻",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "eyes": {
+          "value": "杏仁形眼，眼尾微翘，色泽淡青",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "body_type": {
+          "value": "纤细身形，腰身纤细",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "height": {
+          "value": "约 165 cm",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "skin_tone": {
+          "value": "微偏粉白",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "facial_features": {
+          "value": "面容柔和，轮廓柔和，鼻梁纤细",
+          "confidence": 0.0,
+          "observed_in_chapters": []
+        },
+        "distinguishing_marks": [],
+        "outfit_variants": [],
+        "weapons": [],
+        "accessories": [],
+        "color_palette": []
+      },
+      "pose_style": {
+        "view_angles": [
+          "front",
+          "three-quarter",
+          "side"
+        ],
+        "pose_exclusions": [],
+        "expression_range": [
+          "gentle",
+          "calm"
+        ],
+        "hair_style_variants": [
+          "double buns",
+          "long hair",
+          "woven hair"
+        ]
+      },
+      "positive_tags": [
+        "young woman",
+        "long black hair",
+        "double buns",
+        "light green eyes",
+        "slim build",
+        "pale pink skin",
+        "gentle expression",
+        "cultivation world",
+        "xianxia",
+        "martial arts",
+        "outdoor",
+        "natural lighting",
+        "soft face",
+        "delicate features",
+        "quiet demeanor",
+        "feminine style",
+        "traditional clothing",
+        "light fabric",
+        "soft lighting"
+      ],
+      "negative_tags": [
+        "blurry",
+        "deformed",
+        "extra fingers",
+        "modern clothing",
+        "anime style",
+        "western clothing"
+      ],
+      "style_negative_tags": [
+        "lowres",
+        "anime",
+        "western",
+        "realistic photo",
+        "overly stylized"
+      ],
+      "sample_captions": [
+        "qin_feng_xianxia, young woman, 17yo, long black hair in double buns, light green eyes, slim build, pale pink skin, wearing light silk robe, standing in garden, gentle expression, soft natural lighting",
+        "qin_feng_xianxia, young woman, long hair, soft face, gentle eyes, wearing traditional robe, standing in courtyard, calm posture, three-quarter view",
+        "qin_feng_xianxia, young woman, black hair, delicate features, pale skin, in cultivation world, outdoor, soft lighting, gentle expression"
+      ],
+      "lora_trigger_token": "qin_feng_xianxia",
+      "profile_version": 1,
+      "first_appearance_chapter": 5,
+      "appearance_chapters": [],
+      "mention_resolution": [
+        [
+          5,
+          "秦风未婚妻",
+          "秦风未婚妻"
+        ]
+      ],
+      "last_updated_chapter": 5,
+      "last_updated_at": "2026-07-22T16:08:06.141373"
+    }
+  ]
+}

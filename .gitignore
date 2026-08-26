@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv.broken*/
+.pytest_cache/
+.ruff_cache/
+.test-tmp/
+.coverage
+htmlcov/
+
+# 项目运行产物
+logs/
+projects/
+chapters_backup/
+
+# 本地配置（包含 LLM 服务地址、模型名等）
+.env
+.env.*
+!.env.example
+ssh.txt

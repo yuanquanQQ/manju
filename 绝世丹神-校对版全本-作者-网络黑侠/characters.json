@@ -1,0 +1,270 @@
+{
+  "version": 1,
+  "updated_at": "2026-07-22T16:08:47.471612",
+  "characters": {
+    "安昊尘": {
+      "canonical_name": "安昊尘",
+      "aliases": [
+        "安昊尘"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#安昊尘",
+      "lifecycle_status": "alive"
+    },
+    "收药队使者": {
+      "canonical_name": "收药队使者",
+      "aliases": [
+        "收药队使者"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#收药队使者",
+      "lifecycle_status": "alive"
+    },
+    "林家仆役": {
+      "canonical_name": "林家仆役",
+      "aliases": [
+        "林家仆役"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#林家仆役",
+      "lifecycle_status": "alive"
+    },
+    "林家兄妹（提及）": {
+      "canonical_name": "林家兄妹（提及）",
+      "aliases": [
+        "林家兄妹（提及）"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#林家兄妹（提及）",
+      "lifecycle_status": "alive"
+    },
+    "林家耳目": {
+      "canonical_name": "林家耳目",
+      "aliases": [
+        "林家耳目"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#林家耳目",
+      "lifecycle_status": "alive"
+    },
+    "林权": {
+      "canonical_name": "林权",
+      "aliases": [
+        "林权"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#林权",
+      "lifecycle_status": "alive"
+    },
+    "林浪": {
+      "canonical_name": "林浪",
+      "aliases": [
+        "林浪"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#林浪",
+      "lifecycle_status": "alive"
+    },
+    "林浪（提及）": {
+      "canonical_name": "林浪（提及）",
+      "aliases": [
+        "林浪（提及）"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#林浪（提及）",
+      "lifecycle_status": "alive"
+    },
+    "林淑婉": {
+      "canonical_name": "林淑婉",
+      "aliases": [
+        "林淑婉"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#林淑婉",
+      "lifecycle_status": "alive"
+    },
+    "林淑婉（回忆/提及）": {
+      "canonical_name": "林淑婉（回忆/提及）",
+      "aliases": [
+        "林淑婉（回忆/提及）"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#林淑婉（回忆/提及）",
+      "lifecycle_status": "alive"
+    },
+    "百姓": {
+      "canonical_name": "百姓",
+      "aliases": [
+        "百姓"
+      ],
+      "first_appearance_chapter": 8,
+      "appearance_chapters": [
+        8
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#百姓",
+      "lifecycle_status": "alive"
+    },
+    "矿工": {
+      "canonical_name": "矿工",
+      "aliases": [
+        "矿工"
+      ],
+      "first_appearance_chapter": 8,
+      "appearance_chapters": [
+        8
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#矿工",
+      "lifecycle_status": "alive"
+    },
+    "矿工家属": {
+      "canonical_name": "矿工家属",
+      "aliases": [
+        "矿工家属"
+      ],
+      "first_appearance_chapter": 7,
+      "appearance_chapters": [
+        7
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#矿工家属",
+      "lifecycle_status": "alive"
+    },
+    "秦万里": {
+      "canonical_name": "秦万里",
+      "aliases": [
+        "秦万里"
+      ],
+      "first_appearance_chapter": 7,
+      "appearance_chapters": [
+        7
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#秦万里",
+      "lifecycle_status": "alive"
+    },
+    "秦三秋": {
+      "canonical_name": "秦三秋",
+      "aliases": [
+        "秦三秋"
+      ],
+      "first_appearance_chapter": 1,
+      "appearance_chapters": [
+        1
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#秦三秋",
+      "lifecycle_status": "alive"
+    },
+    "秦家护卫乙": {
+      "canonical_name": "秦家护卫乙",
+      "aliases": [
+        "秦家护卫乙"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#秦家护卫乙",
+      "lifecycle_status": "alive"
+    },
+    "秦家护卫甲": {
+      "canonical_name": "秦家护卫甲",
+      "aliases": [
+        "秦家护卫甲"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#秦家护卫甲",
+      "lifecycle_status": "alive"
+    },
+    "秦戮": {
+      "canonical_name": "秦戮",
+      "aliases": [
+        "秦戮"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#秦戮",
+      "lifecycle_status": "alive"
+    },
+    "秦文松": {
+      "canonical_name": "秦文松",
+      "aliases": [
+        "秦文松"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#秦文松",
+      "lifecycle_status": "alive"
+    },
+    "秦文长老": {
+      "canonical_name": "秦文长老",
+      "aliases": [
+        "秦文长老"
+      ],
+      "first_appearance_chapter": 10,
+      "appearance_chapters": [
+        10
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#秦文长老",
+      "lifecycle_status": "alive"
+    },
+    "秦风": {
+      "canonical_name": "秦风",
+      "aliases": [
+        "秦风"
+      ],
+      "first_appearance_chapter": 1,
+      "appearance_chapters": [
+        1
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#秦风",
+      "lifecycle_status": "alive"
+    },
+    "秦风未婚妻": {
+      "canonical_name": "秦风未婚妻",
+      "aliases": [
+        "秦风未婚妻"
+      ],
+      "first_appearance_chapter": 5,
+      "appearance_chapters": [
+        5
+      ],
+      "latest_profile_path": "character_profiles/profile_after_010.json#秦风未婚妻",
+      "lifecycle_status": "alive"
+    }
+  }
+}

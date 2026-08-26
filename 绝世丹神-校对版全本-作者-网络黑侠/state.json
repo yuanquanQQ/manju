@@ -1,0 +1,70 @@
+{
+  "novel_name": "《绝世丹神》（校对版全本）作者：网络黑侠",
+  "novel_slug": "绝世丹神-校对版全本-作者-网络黑侠",
+  "input_path": "《绝世丹神》（校对版全本）作者：网络黑侠.txt",
+  "input_mtime": 1784686328.36329,
+  "input_hash": "e1099737575ebe27",
+  "total_chapters_detected": 2550,
+  "character_profile_every": 20,
+  "profile_top_k": 5,
+  "completed_chapter_ranges": [
+    [
+      1,
+      20
+    ]
+  ],
+  "last_run_at": "2026-07-23T00:26:57.999555",
+  "created_at": "2026-07-22T14:11:02.157553",
+  "run_history": [
+    {
+      "started_at": "2026-07-22T14:11:08.675411",
+      "batch_start": 1,
+      "batch_end": 10,
+      "only_summaries": false,
+      "only_character_profiles": false,
+      "yes_mode": false
+    },
+    {
+      "started_at": "2026-07-22T14:11:14.175880",
+      "batch_start": 1,
+      "batch_end": 10,
+      "only_summaries": false
+    },
+    {
+      "started_at": "2026-07-22T15:58:01.059083",
+      "batch_start": 1,
+      "batch_end": 10,
+      "only_summaries": false,
+      "only_character_profiles": false,
+      "yes_mode": false
+    },
+    {
+      "started_at": "2026-07-22T15:58:03.198108",
+      "batch_start": 1,
+      "batch_end": 10,
+      "only_summaries": false
+    },
+    {
+      "started_at": "2026-07-23T00:19:36.428093",
+      "batch_start": 11,
+      "batch_end": 2550,
+      "only_summaries": false,
+      "only_character_profiles": false,
+      "yes_mode": false
+    },
+    {
+      "started_at": "2026-07-23T00:19:58.337611",
+      "batch_start": 11,
+      "batch_end": 2550,
+      "only_summaries": false,
+      "only_character_profiles": false,
+      "yes_mode": false
+    },
+    {
+      "started_at": "2026-07-23T00:20:07.395506",
+      "batch_start": 11,
+      "batch_end": 2550,
+      "only_summaries": false
+    }
+  ]
+}
