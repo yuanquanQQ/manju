@@ -64,20 +64,17 @@ def probe_video(
         }
     payload = json.loads(process.stdout)
     streams = payload.get("streams") or []
-    video = next(
-        (item for item in streams if item.get("codec_type") == "video"), {}
-    )
-    audio = next(
-        (item for item in streams if item.get("codec_type") == "audio"), {}
-    )
+    video = next((item for item in streams if item.get("codec_type") == "video"), {})
+    audio = next((item for item in streams if item.get("codec_type") == "audio"), {})
     rate = str(video.get("avg_frame_rate") or "0/1")
     numerator, _, denominator = rate.partition("/")
     fps = float(numerator or 0) / max(float(denominator or 1), 1.0)
-    duration = float(
-        video.get("duration")
-        or (payload.get("format") or {}).get("duration")
-        or 0.0
+    duration = float(video.get("duration") or (payload.get("format") or {}).get("duration") or 0.0)
+    audio_duration = float(
+        audio.get("duration") or (payload.get("format") or {}).get("duration") or 0.0
     )
+    audio_sample_rate = int(audio.get("sample_rate") or 0)
+    audio_channels = int(audio.get("channels") or 0)
     checks = {
         "has_video": bool(video),
         "has_audio": bool(audio),
@@ -85,6 +82,9 @@ def probe_video(
         "height": int(video.get("height") or 0) == expected_height,
         "fps": abs(fps - expected_fps) <= 0.05,
         "duration": abs(duration - expected_duration) <= max(0.30, 1 / expected_fps),
+        "audio_duration": abs(audio_duration - expected_duration) <= max(0.50, 2 / expected_fps),
+        "audio_sample_rate": audio_sample_rate >= 32_000,
+        "audio_channels": audio_channels >= 1,
     }
     return {
         "video_codec": str(video.get("codec_name") or ""),
@@ -93,13 +93,13 @@ def probe_video(
         "height": int(video.get("height") or 0),
         "fps": round(fps, 4),
         "duration_seconds": round(duration, 4),
-        "audio_sample_rate": int(audio.get("sample_rate") or 0),
+        "audio_duration_seconds": round(audio_duration, 4),
+        "audio_sample_rate": audio_sample_rate,
+        "audio_channels": audio_channels,
         "checks": checks,
         "technical_pass": all(checks.values()),
         "approval_status": (
-            "pending_visual_motion_audio_review"
-            if all(checks.values())
-            else "rejected_technical"
+            "pending_visual_motion_audio_review" if all(checks.values()) else "rejected_technical"
         ),
     }
 
@@ -304,20 +304,27 @@ def wait_for_prompt(
     timeout_seconds: int,
 ) -> dict:
     started = time.monotonic()
+    last_transport_error: Exception | None = None
     while time.monotonic() - started < timeout_seconds:
-        history = request_json(base_url, f"/history/{prompt_id}", timeout=30)
+        try:
+            history = request_json(base_url, f"/history/{prompt_id}", timeout=30)
+            last_transport_error = None
+        except (TimeoutError, urllib.error.URLError) as exc:
+            last_transport_error = exc
+            time.sleep(3)
+            continue
         record = history.get(prompt_id)
         if record:
             status = record.get("status") or {}
             if status.get("completed"):
                 if status.get("status_str") != "success":
                     raise RuntimeError(
-                        "ComfyUI 任务失败："
-                        f"{json.dumps(status, ensure_ascii=False)}"
+                        f"ComfyUI 任务失败：{json.dumps(status, ensure_ascii=False)}"
                     )
                 return record
         time.sleep(2)
-    raise TimeoutError(f"ComfyUI 任务超时：{prompt_id}")
+    detail = f"；最近一次连接错误：{last_transport_error}" if last_transport_error else ""
+    raise TimeoutError(f"ComfyUI 任务超时：{prompt_id}{detail}")
 
 
 def find_generated_video(
@@ -335,9 +342,7 @@ def find_generated_video(
         if path.stat().st_mtime >= submitted_at - 2
     ]
     if not candidates:
-        raise FileNotFoundError(
-            f"ComfyUI 已完成，但未找到视频输出：{directory}/{relative.name}_*"
-        )
+        raise FileNotFoundError(f"ComfyUI 已完成，但未找到视频输出：{directory}/{relative.name}_*")
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
@@ -360,9 +365,7 @@ def run(args: argparse.Namespace) -> dict:
         raise FileNotFoundError(f"结束帧不存在：{end_source}")
     positive_prompt = args.positive_prompt
     if args.positive_prompt_file:
-        positive_prompt = Path(args.positive_prompt_file).read_text(
-            encoding="utf-8"
-        )
+        positive_prompt = Path(args.positive_prompt_file).read_text(encoding="utf-8")
     if not positive_prompt.strip():
         raise ValueError("MiniMax H3 positive prompt is empty")
     output_dir.mkdir(parents=True, exist_ok=True)

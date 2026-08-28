@@ -14,12 +14,19 @@ from app.services.gpu_service import GpuConnection, GpuServerService
 from app.services.video_service import VideoRenderService
 from workflows.minimax_h3.generate_video import H3_MODEL, H3_TEXT_ENCODER
 
+VOICE_CONTINUITY = {
+    "旁白": "成熟中国男声，低沉温厚、冷静克制，近距离影视旁白，不朗诵、不拖腔",
+    "秦风": "十八岁中国青年男声，清朗偏低、沉静克制，少年声线中有超越年龄的威压",
+    "林浪": "二十一岁中国青年男声，贵气偏冷、语速从容，轻蔑时不尖细、不脸谱化",
+    "秦三秋": "二十八岁中国男性，厚实果断、忠诚警觉，武将气质但不粗吼",
+    "林淑婉": "十八岁中国青年女声，清冷通透、克制疏离，柔和但不甜腻",
+    "护卫": "中国青年男声，沉稳简洁，服从命令但不机械",
+}
+
 
 def _ssh_password(path: Path) -> str:
     lines = [
-        line.strip()
-        for line in path.read_text(encoding="utf-8-sig").splitlines()
-        if line.strip()
+        line.strip() for line in path.read_text(encoding="utf-8-sig").splitlines() if line.strip()
     ]
     candidates = [line for line in lines if "ssh " not in line.lower()]
     if not candidates:
@@ -63,6 +70,9 @@ def _valid_h3_candidate(project_root: Path, shot: dict) -> tuple[Path, Path] | N
             metadata.get("engine_profile") == "minimax_h3_fl2va"
             and metadata.get("model_name") == H3_MODEL
             and metadata.get("text_encoder") == H3_TEXT_ENCODER
+            and metadata.get("native_audio_mode") == "native_full"
+            and bool(str(metadata.get("dialogue_prompt") or "").strip())
+            and (metadata.get("technical_qc") or {}).get("checks", {}).get("has_audio") is True
         ):
             valid.append((clip.resolve(), manifest.resolve()))
     return max(valid, key=lambda item: item[0].stat().st_mtime) if valid else None
@@ -88,12 +98,41 @@ def _pending_h3_candidates(project_root: Path, shot: dict) -> list[Path]:
             metadata.get("engine_profile") == "minimax_h3_fl2va"
             and metadata.get("model_name") == H3_MODEL
             and metadata.get("text_encoder") == H3_TEXT_ENCODER
-            and metadata.get("approval_status")
-            == "pending_visual_motion_audio_review"
+            and metadata.get("approval_status") == "pending_visual_motion_audio_review"
             and (metadata.get("technical_qc") or {}).get("technical_pass") is True
+            and metadata.get("native_audio_mode") == "native_full"
+            and bool(str(metadata.get("dialogue_prompt") or "").strip())
         ):
             pending.append(clip.resolve())
     return pending
+
+
+def _native_dialogue_prompt(shot: dict) -> str:
+    audio = shot.get("audio_generation") or {}
+    speaker = str(audio.get("speaker") or "旁白").strip() or "旁白"
+    text = str(audio.get("text") or "").strip()
+    if not text:
+        raw_dialogue = str(shot.get("dialogue") or "").strip()
+        _, separator, spoken = raw_dialogue.partition("：")
+        text = spoken.strip() if separator else raw_dialogue
+    if not text:
+        raise RuntimeError(
+            f"Shot {int(shot['shot_number']):03d} has no exact line for H3 native audio"
+        )
+    voice = VOICE_CONTINUITY.get(speaker, "自然的中国普通话真人声线，影视表演感，克制且清晰")
+    performance = str(audio.get("instruct_text") or "").strip()
+    mode = str(audio.get("mode") or "dialogue")
+    placement = (
+        "画外旁白，画面人物不得对口型"
+        if mode == "auto_narration" or speaker == "旁白"
+        else f"由画面中的{speaker}本人说出，嘴唇与每个汉字自然同步，其他人物不得开口"
+    )
+    return (
+        f"语言：标准中国普通话。说话人：{speaker}。固定声线：{voice}。"
+        f"发声位置：{placement}。必须逐字、只说一次：『{text}』。"
+        "禁止改词、漏词、加词、重复、翻译、唱诵、电子音和额外人声。"
+        f"表演要求：{performance or '自然影视对白，停连随语义，不使用播音腔。'}"
+    )[:1600]
 
 
 def _video_spec(project_root: Path, episode_number: int, shot: dict) -> VideoRenderSpec:
@@ -111,10 +150,8 @@ def _video_spec(project_root: Path, episode_number: int, shot: dict) -> VideoRen
         continuity_constraints=str(video.get("continuity_constraints") or ""),
         negative_prompt=str(video.get("negative_prompt") or ""),
         motion_prompt=str(video.get("motion_prompt") or ""),
-        native_audio_mode=str(
-            video.get("native_audio_mode") or "ambience_sfx_music"
-        ),
-        dialogue_prompt=str(video.get("dialogue_prompt") or ""),
+        native_audio_mode="native_full",
+        dialogue_prompt=_native_dialogue_prompt(shot),
         sound_effect_prompt=str(video.get("sound_effect_prompt") or ""),
         music_prompt=str(video.get("music_prompt") or ""),
         camera_movement=str(video.get("camera_movement") or "auto"),
@@ -137,12 +174,7 @@ def _video_spec(project_root: Path, episode_number: int, shot: dict) -> VideoRen
 def run(project_slug: str, episode_number: int, workspace: Path) -> Path:
     projects_dir = workspace / "projects"
     project_root = (projects_dir / project_slug).resolve()
-    episode_path = (
-        project_root
-        / "production"
-        / "episodes"
-        / f"episode_{episode_number:03d}.json"
-    )
+    episode_path = project_root / "production" / "episodes" / f"episode_{episode_number:03d}.json"
     project_service = DesktopProjectService(projects_dir)
     gpu_service = GpuServerService()
 
@@ -213,16 +245,12 @@ def run(project_slug: str, episode_number: int, workspace: Path) -> Path:
             clip_callback=persist,
         )
         episode = _read_episode(episode_path)
-        shots = sorted(
-            episode.get("shots") or [], key=lambda item: item["shot_number"]
-        )
+        shots = sorted(episode.get("shots") or [], key=lambda item: item["shot_number"])
 
     episode = _read_episode(episode_path)
     timeline: list[EpisodeClipSpec] = []
     missing: list[int] = []
-    for shot in sorted(
-        episode.get("shots") or [], key=lambda item: item["shot_number"]
-    ):
+    for shot in sorted(episode.get("shots") or [], key=lambda item: item["shot_number"]):
         video = shot.get("video_generation") or {}
         selected = project_root / str(video.get("selected_video") or "")
         if not selected.is_file():
@@ -233,9 +261,7 @@ def run(project_slug: str, episode_number: int, workspace: Path) -> Path:
                 path=selected.resolve(),
                 shot_number=int(shot["shot_number"]),
                 duration_seconds=float(
-                    video.get("duration_seconds")
-                    or shot.get("duration_seconds")
-                    or 3.0
+                    video.get("duration_seconds") or shot.get("duration_seconds") or 3.0
                 ),
                 transition_out=str(video.get("transition_out") or "cut"),
                 transition_frames=int(video.get("transition_frames") or 0),

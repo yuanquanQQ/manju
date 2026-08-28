@@ -123,9 +123,7 @@ class VideoRenderService:
     """Generate standardized MP4 clips from reviewed storyboard keyframes."""
 
     def __init__(self, ffmpeg_executable: str | Path | None = None) -> None:
-        self.ffmpeg_executable = Path(
-            ffmpeg_executable or imageio_ffmpeg.get_ffmpeg_exe()
-        )
+        self.ffmpeg_executable = Path(ffmpeg_executable or imageio_ffmpeg.get_ffmpeg_exe())
         self._version = ""
 
     def check_status(self) -> VideoRuntimeStatus:
@@ -256,9 +254,7 @@ class VideoRenderService:
             if not status.available:
                 raise RuntimeError(status.message)
             unsupported = {
-                spec.engine_profile
-                for spec in specs
-                if spec.engine_profile != "comic_motion"
+                spec.engine_profile for spec in specs if spec.engine_profile != "comic_motion"
             }
             if unsupported:
                 labels = "、".join(sorted(unsupported))
@@ -279,9 +275,7 @@ class VideoRenderService:
                 heartbeat_job(job.id, 0.04 + index / total * 0.91)
             elapsed = time.monotonic() - started
             payload = {
-                "clips": [
-                    item.video_path.relative_to(root).as_posix() for item in results
-                ],
+                "clips": [item.video_path.relative_to(root).as_posix() for item in results],
                 "elapsed_seconds": elapsed,
             }
             transition_job(job.id, JobStatus.SUCCEEDED, result=payload)
@@ -353,9 +347,7 @@ class VideoRenderService:
 
         try:
             report(8, f"正在合成 {len(resolved)} 个镜头")
-            include_audio = all(
-                self._has_audio_stream(path) for path in resolved
-            )
+            include_audio = all(self._has_audio_stream(path) for path in resolved)
             if self._timeline_has_visual_transitions(timeline):
                 command = self._transition_compose_command(
                     timeline,
@@ -405,9 +397,9 @@ class VideoRenderService:
                     command.append("-an")
                 command.extend(
                     [
-                    "-movflags",
-                    "+faststart",
-                    str(temporary),
+                        "-movflags",
+                        "+faststart",
+                        str(temporary),
                     ]
                 )
             self._run(command, timeout=1800)
@@ -450,7 +442,7 @@ class VideoRenderService:
                 JobStatus.SUCCEEDED,
                 result={"video": destination.relative_to(root).as_posix()},
             )
-            report(100, "整集无声预览已合成")
+            report(100, "整集原生音视频预览已合成")
             return EpisodeComposeResult(
                 episode_number=episode_number,
                 video_path=destination,
@@ -541,9 +533,7 @@ class VideoRenderService:
             shot_number=spec.shot_number,
             source_image=source.relative_to(root).as_posix(),
             end_image=(
-                self._project_file(root, spec.end_image, "结束帧")
-                .relative_to(root)
-                .as_posix()
+                self._project_file(root, spec.end_image, "结束帧").relative_to(root).as_posix()
                 if spec.end_image
                 else ""
             ),
@@ -674,8 +664,7 @@ class VideoRenderService:
                 timeline[index].duration_seconds / 2,
             )
             if (
-                previous.transition_out
-                in {"match_cut", "dissolve", "fade_black"}
+                previous.transition_out in {"match_cut", "dissolve", "fade_black"}
                 and transition_seconds > 0
             ):
                 effect = (
@@ -702,9 +691,7 @@ class VideoRenderService:
                         f"[{audio_output_label}]"
                     )
                     current_audio_label = audio_output_label
-                current_duration += (
-                    timeline[index].duration_seconds - transition_seconds
-                )
+                current_duration += timeline[index].duration_seconds - transition_seconds
             else:
                 filters.append(
                     f"[{current_label}][v{index}]"
@@ -715,9 +702,7 @@ class VideoRenderService:
                 if include_audio:
                     audio_output_label = f"audio{index}"
                     filters.append(
-                        f"[{current_audio_label}][a{index}]"
-                        "concat=n=2:v=0:a=1"
-                        f"[{audio_output_label}]"
+                        f"[{current_audio_label}][a{index}]concat=n=2:v=0:a=1[{audio_output_label}]"
                     )
                     current_audio_label = audio_output_label
                 current_duration += timeline[index].duration_seconds
@@ -806,9 +791,7 @@ class VideoRenderService:
         if not source.is_file() or not self._has_audio_stream(source):
             return False
         target = max(-36.0, min(float(target_lufs), -14.0))
-        temporary = source.with_name(
-            f".{source.stem}.audio_normalizing{source.suffix}"
-        )
+        temporary = source.with_name(f".{source.stem}.audio_normalizing{source.suffix}")
         try:
             self._run(
                 [
@@ -855,41 +838,23 @@ class VideoRenderService:
         fps: int,
         frame_count: int,
     ) -> str:
-        base = (
-            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height},"
-        )
+        base = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},"
         last = max(frame_count - 1, 1)
         if preset == "pan_left":
             zoom = f"z=1.08:x='(iw-iw/zoom)*on/{last}':y='ih/2-(ih/zoom/2)'"
         elif preset == "pan_right":
-            zoom = (
-                f"z=1.08:x='(iw-iw/zoom)*(1-on/{last})':"
-                "y='ih/2-(ih/zoom/2)'"
-            )
+            zoom = f"z=1.08:x='(iw-iw/zoom)*(1-on/{last})':y='ih/2-(ih/zoom/2)'"
         elif preset == "tilt_up":
-            zoom = (
-                "z=1.08:x='iw/2-(iw/zoom/2)':"
-                f"y='(ih-ih/zoom)*(1-on/{last})'"
-            )
+            zoom = f"z=1.08:x='iw/2-(iw/zoom/2)':y='(ih-ih/zoom)*(1-on/{last})'"
         elif preset == "tilt_down":
-            zoom = (
-                "z=1.08:x='iw/2-(iw/zoom/2)':"
-                f"y='(ih-ih/zoom)*on/{last}'"
-            )
+            zoom = f"z=1.08:x='iw/2-(iw/zoom/2)':y='(ih-ih/zoom)*on/{last}'"
         elif preset == "slow_pull":
-            zoom = (
-                f"z='1.08-0.07*on/{last}':"
-                "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-            )
+            zoom = f"z='1.08-0.07*on/{last}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
         elif preset == "still":
             zoom = "z='min(zoom+0.00008,1.015)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
         else:
             zoom = "z='min(zoom+0.00065,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-        return (
-            f"{base}zoompan={zoom}:d=1:s={width}x{height}:fps={fps},"
-            "format=yuv420p"
-        )
+        return f"{base}zoompan={zoom}:d=1:s={width}x{height}:fps={fps},format=yuv420p"
 
     @staticmethod
     def _resolve_motion_preset(value: str) -> str:

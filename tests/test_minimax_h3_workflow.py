@@ -2,6 +2,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from scripts.generate_episode_h3 import (
+    _native_dialogue_prompt,
     _pending_h3_candidates,
     _valid_h3_candidate,
 )
@@ -154,6 +155,8 @@ def test_probe_video_requires_video_audio_and_expected_geometry(
                 "codec_type": "audio",
                 "codec_name": "aac",
                 "sample_rate": "48000",
+                "channels": 2,
+                "duration": "5.1667",
             },
         ],
         "format": {"duration": "5.1667"},
@@ -177,6 +180,46 @@ def test_probe_video_requires_video_audio_and_expected_geometry(
 
     assert qc["technical_pass"] is True
     assert qc["approval_status"] == "pending_visual_motion_audio_review"
+    assert qc["audio_duration_seconds"] == 5.1667
+    assert qc["audio_channels"] == 2
+
+
+def test_native_dialogue_prompt_locks_exact_mandarin_line_and_speaker() -> None:
+    prompt = _native_dialogue_prompt(
+        {
+            "shot_number": 10,
+            "dialogue": "秦风：三秋叔，你怎么在这里？",
+            "audio_generation": {
+                "mode": "dialogue",
+                "speaker": "秦风",
+                "text": "三秋叔，你怎么在这里？",
+                "instruct_text": "平静询问，句尾不拖长。",
+            },
+        }
+    )
+
+    assert "标准中国普通话" in prompt
+    assert "说话人：秦风" in prompt
+    assert "必须逐字、只说一次：『三秋叔，你怎么在这里？』" in prompt
+    assert "嘴唇与每个汉字自然同步" in prompt
+    assert "平静询问" in prompt
+
+
+def test_native_narration_stays_off_screen_without_lip_motion() -> None:
+    prompt = _native_dialogue_prompt(
+        {
+            "shot_number": 1,
+            "dialogue": "旁白：云影镇，秦家药圃。",
+            "audio_generation": {
+                "mode": "auto_narration",
+                "speaker": "旁白",
+                "text": "云影镇，秦家药圃。",
+            },
+        }
+    )
+
+    assert "画外旁白" in prompt
+    assert "画面人物不得对口型" in prompt
 
 
 def test_video_qc_sheet_samples_start_middle_and_end(tmp_path: Path, monkeypatch) -> None:
@@ -216,7 +259,12 @@ def test_episode_h3_only_resumes_selected_candidates(tmp_path: Path) -> None:
                 "model_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
                 "text_encoder": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
                 "approval_status": "pending_visual_motion_audio_review",
-                "technical_qc": {"technical_pass": True},
+                "native_audio_mode": "native_full",
+                "dialogue_prompt": "说话人：秦风。必须逐字说出台词。",
+                "technical_qc": {
+                    "technical_pass": True,
+                    "checks": {"has_audio": True},
+                },
             }
         ),
         encoding="utf-8",

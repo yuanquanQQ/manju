@@ -1541,6 +1541,8 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n
                 raise ValueError("MiniMax H3 视频宽高必须是 32 的倍数")
             if spec.fps != 24:
                 raise ValueError("MiniMax H3 固定使用 24fps")
+            if spec.native_audio_mode == "native_full" and not spec.dialogue_prompt.strip():
+                raise ValueError("MiniMax H3 原生完整声音模式必须提供逐字对白提示")
 
         root = Path(project_root).resolve()
         init_db(root / "database" / "world.db")
@@ -1776,6 +1778,10 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n
                             transition_frames=spec.transition_frames,
                             handle_frames=spec.handle_frames,
                             candidate_count=spec.candidate_count,
+                            technical_qc=dict(record.get("technical_qc") or {}),
+                            approval_status=str(
+                                record.get("approval_status") or "rejected_technical"
+                            ),
                             duration_seconds=spec.duration_seconds,
                             fps=24,
                             width=spec.width,
