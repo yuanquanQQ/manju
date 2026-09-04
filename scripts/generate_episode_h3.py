@@ -12,9 +12,9 @@ from app.domain.video import EpisodeClipSpec, VideoRenderSpec
 from app.services.desktop_service import DesktopProjectService
 from app.services.gpu_service import GpuConnection, GpuServerService
 from app.services.video_service import VideoRenderService
-from workflows.minimax_h3.generate_video import H3_MODEL, H3_TEXT_ENCODER
+from workflows.minimax_h3.generate_video import H3_MODEL, H3_TEXT_ENCODER, normalize_frame_count
 
-H3_GENERATION_REVISION = "h3_t8_native_v1"
+H3_GENERATION_REVISION = "h3_t8_chained_v1"
 
 VOICE_CONTINUITY = {
     "旁白": "成熟中国男声，低沉温厚、冷静克制，近距离影视旁白，不朗诵、不拖腔",
@@ -196,6 +196,7 @@ def run(
     workspace: Path,
     *,
     max_shots: int | None = 20,
+    chain_shots: bool = True,
 ) -> Path:
     projects_dir = workspace / "projects"
     project_root = (projects_dir / project_slug).resolve()
@@ -239,6 +240,13 @@ def run(
             if name and not str(selections.get(name) or "").strip():
                 raise RuntimeError(f"Shot {number:03d} character {name!r} has no approved cast reference")
 
+    # Shot chaining: shot N's first frame = shot N-1's last frame. The previous
+    # clip's final frame is extracted locally with ffmpeg and uploaded as the
+    # next shot's source_image so the two clips meet at a pixel-exact boundary.
+    video_service = VideoRenderService()
+    previous_video_path: Path | None = None
+    chained_dir = project_root / "production" / "video_inputs" / f"episode_{episode_number:03d}"
+
     for shot in shots:
         shot_number = int(shot["shot_number"])
         existing = _valid_h3_candidate(project_root, shot)
@@ -251,6 +259,8 @@ def run(
                 existing[1],
                 select=True,
             )
+            # A skipped shot still yields a last frame for the next shot.
+            previous_video_path = existing[0]
             print(f"[SKIP] shot={shot_number:03d} valid_h3_candidate", flush=True)
             continue
 
@@ -269,6 +279,30 @@ def run(
             )
 
         spec = _video_spec(project_root, episode_number, shot)
+
+        if chain_shots and previous_video_path is not None:
+            chained_frame = chained_dir / f"shot_{shot_number:03d}_chained.png"
+            frame_count = normalize_frame_count(round(spec.duration_seconds * 24))
+            if video_service.extract_last_frame(
+                previous_video_path, chained_frame, frame_count=frame_count
+            ):
+                spec = spec.model_copy(
+                    update={
+                        "source_image": chained_frame,
+                        "chained_from_previous": True,
+                    }
+                )
+                print(
+                    f"[CHAIN] shot={shot_number:03d} first_frame<-shot_prev_last "
+                    f"{previous_video_path.name}",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[CHAIN_WARN] shot={shot_number:03d} could not extract last "
+                    f"frame from {previous_video_path.name}; using storyboard frame",
+                    flush=True,
+                )
 
         def progress(percent: int, _message: str, number: int = shot_number) -> None:
             print(f"[PROGRESS] shot={number:03d} percent={percent}", flush=True)
@@ -305,6 +339,9 @@ def run(
                 f"[RETRY] shot={shot_number:03d} technical QC failed; generating candidate 2",
                 flush=True,
             )
+        # The most recent candidate's clip feeds the next shot's first frame.
+        if batch.clips:
+            previous_video_path = batch.clips[-1].video_path
         episode = _read_episode(episode_path)
         shots = sorted(episode.get("shots") or [], key=lambda item: item["shot_number"])
         if max_shots is not None:
@@ -364,12 +401,19 @@ def main() -> None:
         default=20,
         help="仅生成前 N 个镜头；传 0 表示整集",
     )
+    parser.add_argument(
+        "--chain-shots",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="镜头 N 首帧 = 镜头 N-1 末帧(默认开；--no-chain-shots 退回独立首帧)",
+    )
     args = parser.parse_args()
     run(
         args.project,
         args.episode,
         args.workspace.resolve(),
         max_shots=args.max_shots or None,
+        chain_shots=args.chain_shots,
     )
 
 

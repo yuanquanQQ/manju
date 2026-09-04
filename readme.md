@@ -566,10 +566,14 @@ LLM 后端状态,可通过更换更快的 OpenAI 兼容后端 / 调整 `LLM_MAX_
   耗时较长;可用 `doctor` 与「连接与设置」逐步体检。
 - 人物一致性格外依赖身份指纹与参考帧机制,复杂场景仍需人工在 GUI 中审批候选。
 - 项目早期技术选型(Wan2.2 等)已迁移至 MiniMax H3 FL2VA;`workflows/wan22/` 仅余缓存。
-- H3 视频已迁移到 T8 音视频增强图(`h3_t8_native_v1`):联合 conditioning + 双钟采样器,
+- H3 视频已迁移到 T8 音视频增强图(`h3_t8_chained_v1`):联合 conditioning + 双钟采样器,
   对白/音效由提示词直接合成;依赖 `comfyui-minimax-h3-audio-T8` 自定义节点,首次使用前
-  需在「连接与设置」安装/修复 T8 音频包。长视频多镜头连续(LongVideo 家族)与 OpenVDN
-  8 步加速为后续规划项,暂未接入。
+  需在「连接与设置」安装/修复 T8 音频包。
+- **镜头间像素级连贯**:`generate_episode_h3.py` 默认开启末帧→首帧链接——本地用 ffmpeg
+  从镜头 N-1 的已生成视频抽取末帧,作为镜头 N 的 `source_image`,使相邻镜头在像素级精确
+  交接(`--chain-shots`,传 `--no-chain-shots` 退回独立首帧)。抽帧失败自动回退故事板关键帧,
+  不阻塞生成。该机制仅作用于脚本路径,不影响桌面端批量调用。
+- 长视频多镜头跨镜上下文(LongVideo 家族)与 OpenVDN 8 步加速为后续规划项,暂未接入。
 
 ---
 

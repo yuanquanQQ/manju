@@ -51,6 +51,7 @@ class VideoRenderSpec(BaseModel):
     steps: int | None = Field(default=None, ge=1, le=120)
     audio_mode_override: str = Field(default="", max_length=32)
     reference_audio: Path | None = None
+    chained_from_previous: bool = False
 
     @model_validator(mode="after")
     def validate_dimensions(self) -> VideoRenderSpec:

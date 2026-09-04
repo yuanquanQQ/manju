@@ -48,7 +48,7 @@ H3_T8_SAMPLER_NAME = "dual_clock_euler"
 H3_T8_SCHEDULER = "native_flow"
 H3_T8_SHIFT_VIDEO = 12.0
 H3_T8_SHIFT_AUDIO = 3.0
-H3_GENERATION_REVISION = "h3_t8_native_v1"
+H3_GENERATION_REVISION = "h3_t8_chained_v1"
 
 
 @dataclass(slots=True)
@@ -1670,6 +1670,22 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
             if spec.end_image
             else "The motion ends on a stable, readable pose that can cut cleanly."
         )
+        if spec.chained_from_previous:
+            opening = (
+                "Continue seamlessly from the previous shot's final frame; "
+                "preserve the inherited pose, screen direction, costume and "
+                "momentum into the first boundary, then let natural breathing "
+                f"and weight shift carry the action forward for approximately "
+                f"{handle_seconds:.2f}s."
+            )
+        else:
+            opening = (
+                f"Begin exactly from the supplied first frame. Preserve identity, "
+                "costume, props, screen direction, eyelines and background "
+                f"geometry. Keep the first boundary readable for approximately "
+                f"{handle_seconds:.2f}s while natural breathing and weight shift "
+                "initiate the action."
+            )
         return "\n\n".join(
             part
             for part in (
@@ -1679,11 +1695,7 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
                 ),
                 (
                     "Timeline:\n"
-                    f"[0.00s-{setup_end:.2f}s] Begin exactly from the supplied first "
-                    "frame. Preserve identity, costume, props, screen direction, "
-                    "eyelines and background geometry. Keep the first boundary "
-                    f"readable for approximately {handle_seconds:.2f}s while natural "
-                    "breathing and weight shift initiate the action.\n"
+                    f"[0.00s-{setup_end:.2f}s] {opening}\n"
                     f"[{setup_end:.2f}s-{action_end:.2f}s] Perform one physically "
                     f"coherent action: {spec.subject_motion.strip() or spec.motion_prompt.strip()}. "
                     f"Environment motion: {spec.environment_motion.strip()}.\n"

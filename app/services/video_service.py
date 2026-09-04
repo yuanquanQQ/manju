@@ -832,6 +832,68 @@ class VideoRenderService:
         finally:
             temporary.unlink(missing_ok=True)
 
+    def extract_last_frame(
+        self,
+        path: Path,
+        destination: Path,
+        *,
+        frame_count: int | None = None,
+    ) -> bool:
+        """Extract the final frame of a clip as a PNG for shot chaining.
+
+        Used by generate_episode_h3.py to make shot N's first frame equal shot
+        N-1's last frame, closing the per-shot independence gap. Falls back to a
+        small negative seek (``-sseof``) when the frame count is unknown so the
+        very last frame is captured regardless of container timing.
+        """
+
+        source = Path(path).resolve()
+        if not source.is_file():
+            return False
+        destination = Path(destination).resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if frame_count and frame_count > 1:
+            last_index = frame_count - 1
+            select_expr = f"select=eq(n\\,{last_index})"
+            command = [
+                str(self.ffmpeg_executable),
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(source),
+                "-vf",
+                select_expr,
+                "-frames:v",
+                "1",
+                str(destination),
+            ]
+        else:
+            # -sseof seeks from the end of file; -0.5s lands on the last frame
+            # for most containers without needing a frame count.
+            command = [
+                str(self.ffmpeg_executable),
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-sseof",
+                "-0.5",
+                "-i",
+                str(source),
+                "-frames:v",
+                "1",
+                "-q:v",
+                "2",
+                str(destination),
+            ]
+        try:
+            self._run(command, timeout=120)
+        except Exception:
+            return False
+        return destination.is_file()
+
     @staticmethod
     def _motion_filter(
         preset: str,
