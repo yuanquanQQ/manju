@@ -330,7 +330,7 @@ class VoiceLibraryPage(QWidget):
         self.cast_table.setMinimumHeight(430)
         layout.addWidget(self.cast_table)
         warning = QLabel(
-            "注意：把新声音应用到已完成口型的镜头，会自动恢复干净 Wan 源视频并把口型设为待重做。"
+            "注意：把新声音应用到已完成口型的镜头，会自动恢复干净源视频并把口型设为待重做。"
         )
         warning.setObjectName("pillWarn")
         warning.setWordWrap(True)

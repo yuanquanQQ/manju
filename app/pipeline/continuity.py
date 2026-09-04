@@ -130,12 +130,7 @@ def _character_names(
     known_matches = [name for name in known_names if name in combined]
     if known_matches:
         return known_matches
-    profiles = re.findall(
-        r"\b(?:Qin Feng|Lin Lang|Lin Shuwan|Qin Sanqiu)\b",
-        str(shot.get("image_prompt") or ""),
-        flags=re.IGNORECASE,
-    )
-    return list(dict.fromkeys(profiles))
+    return []
 
 
 def _reference_composition_compatible(shot: dict[str, Any]) -> bool:

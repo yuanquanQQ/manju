@@ -2,7 +2,7 @@
 
 ## 1. 产品目标
 
-将一本中文长篇小说（TXT、Markdown 或章节 JSON）转换为可播放的漫剧剧集，输出画面、镜头视频、对白配音、字幕、音效、配乐和最终 MP4。V1 以 Python 技术栈和自有 RTX 3090 24GB GPU 服务器为正式生成环境；开发机负责控制、审核和轻量测试，通过可配置的局域网接口访问服务器上的 LLM、ComfyUI 和 I2V 服务，数据不依赖公有云。
+将一本中文长篇小说（TXT、Markdown 或章节 JSON）转换为可播放的漫剧剧集，输出画面、镜头视频、对白配音、字幕、音效、配乐和最终 MP4。V1 以 Python 技术栈和自有 RTX 3090 24GB GPU 服务器为正式生成环境；开发机负责控制、审核和轻量测试，通过可配置的局域网接口访问服务器上的 LLM、ComfyUI，镜头视频使用本地 MiniMax H3 FL2VA 引擎生成，数据不依赖公有云。
 
 V1 的首要目标不是一次性处理整本小说，而是先稳定跑通一条可复现、可暂停、可恢复、可人工修订的端到端生产链路。
 
@@ -52,7 +52,7 @@ Data & Artifact Layer
 SQLite + FTS5 + Vector Index + JSON Manifest + Files
                     │
 Adapters
-LLM / Embedding / ComfyUI / I2V / TTS / FFmpeg
+LLM / Embedding / ComfyUI / H3 视频 / TTS / FFmpeg
 ```
 
 边界原则：

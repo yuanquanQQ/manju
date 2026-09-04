@@ -2,6 +2,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from scripts.generate_episode_h3 import (
+    H3_GENERATION_REVISION,
     _native_dialogue_prompt,
     _pending_h3_candidates,
     _valid_h3_candidate,
@@ -258,6 +259,7 @@ def test_episode_h3_only_resumes_selected_candidates(tmp_path: Path) -> None:
                 "engine_profile": "minimax_h3_fl2va",
                 "model_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
                 "text_encoder": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+                "generation_revision": H3_GENERATION_REVISION,
                 "approval_status": "pending_visual_motion_audio_review",
                 "native_audio_mode": "native_full",
                 "dialogue_prompt": "说话人：秦风。必须逐字说出台词。",

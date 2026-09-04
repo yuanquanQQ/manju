@@ -107,24 +107,24 @@ Copy-Item .env.example .env
 可用“历史版本”随时比较或切回。完整说明见：
 [图片不满意时的修改功能](docs/04-图片不满意时的修改功能.md)。
 
-“视频生成”页默认开启“按镜头动作自动选择模型”：表情、呼吸、视线和小幅手势
-使用 Wan2.2 TI2V 5B；行走、后退、起身、拔剑和多人位移等具有明确动作终点的
-镜头使用 Wan2.2 FLF2V 14B。FLF2V 缺少结束帧时，应用会先从起始帧自动生成
-两个结束关键帧候选，通过 SSIM 连续性检查后自动绑定，再继续视频生成；过度漂移
-或几乎冻结的候选只保留供检查，不会进入成片。“漫画动效”仅用于静态推拉预览。
+“视频生成”页默认开启“按镜头动作自动选择模型”，动作路由统一返回默认引擎
+MiniMax H3 FL2VA（minimax_h3_fl2va），不再区分 Wan 的 TI2V/FLF2V。H3 使用
+首尾帧输入，需要明确动作终点时可先准备结束关键帧再生成；“漫画动效”仅用于
+静态推拉预览，不是 AI 视频引擎。
 
-FLF2V 使用官方高噪声、低噪声两阶段 14B FP8 工作流。可在“连接与设置”点击
-“安装/修复 Wan FLF2V”，或运行 `scripts/gpu/wan22_flf2v/install.sh`。安装器固定
-支持 `HF_ENDPOINT=https://hf-mirror.com`、断点续传、文件大小校验，并强制保留
-至少 12GiB 服务器空间；不会自动删除 H3 或其他用途不确定的模型。
+H3 视频自带原生音效/对白。可在“连接与设置”点击“安装/修复 MiniMax H3”，或运行
+`scripts/gpu/minimax_h3/install.sh`。安装器会下载 4 个 H3 权重（约 42GB），固定支持
+`HF_ENDPOINT=https://hf-mirror.com`、断点续传、文件大小校验，并强制保留至少
+12GiB 服务器空间；不会自动删除其他用途不确定的模型。
 
-动作结束帧使用专门的 `FLUX.1 Kontext Dev FP8` 参考图编辑器，不再用 Krea 或
-Juggernaut 的普通 img2img 冒充姿态编辑。可在“连接与设置”点击“安装/修复
+动作结束帧和图片编辑都使用专门的 `FLUX.1 Kontext Dev FP8` 参考图编辑器，不再用
+Krea 或 Juggernaut 的普通 img2img 冒充姿态编辑。可在“连接与设置”点击“安装/修复
 FLUX.1 Kontext”，或运行 `scripts/gpu/flux_kontext/install.sh`；模型位于
 `/root/autodl-tmp/ComfyUI/models/diffusion_models/flux1-dev-kontext_fp8_scaled.safetensors`
-（精确大小 11,904,640,136 字节）。自动尾帧会优先执行明确的动作姿态变化、输出回
-视频目标分辨率，并同时检查细节差异与低频构图一致性；清单会标注
-`model_id=flux_kontext`、模型文件名和生成时间。
+（精确大小 11,904,640,136 字节）。H3 的首尾帧输入与角色图、分镜首帧修改共用这套
+参考图编辑器；为 H3 准备尾帧时会优先执行明确的动作姿态变化、输出回视频目标分辨率，
+并同时检查细节差异与低频构图一致性；清单会标注 `model_id=flux_kontext`、模型文件名
+和生成时间。
 
 配音与字幕
 
@@ -135,7 +135,7 @@ FLUX.1 Kontext”，或运行 `scripts/gpu/flux_kontext/install.sh`；模型位�
 - “人物自动选声”会读取各集人物资料、出场描述和对白说话人，推断人物特征并
   推荐声音；任意人物均可手动改配，手动结果会锁定，不被下一次自动匹配覆盖；
 - “应用到全部分镜”才会把选择写入镜头配音参数。若声音发生变化，应用会保留
-  旧口型结果作为历史文件、恢复干净的 Wan 源视频，并把相关口型任务标记为待重做；
+  旧口型结果作为历史文件、恢复干净源视频，并把相关口型任务标记为待重做；
 - 共用声音库存放在 `projects/_voice_library/`，项目内的分配表存放在
   `projects/<项目名>/production/voice_assignments.json`。
 
@@ -174,7 +174,7 @@ Edge TTS 需要联网但不需要 API Key。高质量本地引擎使用
 
 可复用部署文件位于 `scripts/gpu/cosyvoice/`。模型下载脚本固定读取
 `HF_ENDPOINT=https://hf-mirror.com`，只下载单卡推理必需文件，不下载 RL、
-批处理 tokenizer 和 TensorRT 权重。开始生图或 Wan 视频任务前，应用会自动停止
+批处理 tokenizer 和 TensorRT 权重。开始生图或视频生成任务（H3）前，应用会自动停止
 CosyVoice 释放显存；需要配音时再按需启动。
 
 每个对白镜头会保存独立的口型任务参数，包括 LatentSync 版本、目标人物和
@@ -656,6 +656,8 @@ Wan2.2 I2V（如果3090显存允许）
 或
 
 CogVideoX I2V
+
+> 注：此为该阶段早期方案，现已迁移至 MiniMax H3 FL2VA 本地引擎。
 
 验收
 

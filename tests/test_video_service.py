@@ -34,13 +34,16 @@ def test_video_spec_rejects_odd_dimensions(tmp_path: Path) -> None:
         )
 
 
-def test_first_last_frame_engine_requires_end_image(tmp_path: Path) -> None:
-    with pytest.raises(ValidationError, match="必须指定结束帧"):
+def test_h3_engine_enforces_dimension_multiple(tmp_path: Path) -> None:
+    """MiniMax H3 引擎强制宽高必须是 32 的倍数。"""
+    with pytest.raises(ValidationError, match="MiniMax H3 视频宽高必须是 32 的倍数"):
         VideoRenderSpec(
             episode_number=1,
             shot_number=1,
             source_image=tmp_path / "start.ppm",
-            engine_profile="wan22_flf2v",
+            engine_profile="minimax_h3_fl2va",
+            width=320,
+            height=240,
         )
 
 

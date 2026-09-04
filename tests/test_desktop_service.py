@@ -267,7 +267,7 @@ def test_desktop_project_snapshot_and_character_gallery(tmp_path: Path) -> None:
         "demo",
         1,
         1,
-        engine_profile="wan22_flf2v",
+        engine_profile="minimax_h3_fl2va",
         subject_motion="秦风缓慢抬头",
         environment_motion="晨雾从左向右流动",
         continuity_constraints="保持脸型、服装和药圃布局一致",
@@ -300,7 +300,7 @@ def test_desktop_project_snapshot_and_character_gallery(tmp_path: Path) -> None:
     assert shot.source_image == stored_frame
     assert shot.end_image == stored_end_frame
     assert shot.video_path == video
-    assert shot.engine_profile == "wan22_flf2v"
+    assert shot.engine_profile == "minimax_h3_fl2va"
     assert shot.subject_motion == "秦风缓慢抬头"
     assert shot.environment_motion == "晨雾从左向右流动"
     assert shot.continuity_constraints == "保持脸型、服装和药圃布局一致"

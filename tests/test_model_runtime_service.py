@@ -22,9 +22,12 @@ def test_local_model_inventory_distinguishes_installed_and_callable(
         ),
     )
     for relative in (
-        "ComfyUI/models/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors",
-        "ComfyUI/models/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-        "ComfyUI/models/vae/wan2.2_vae.safetensors",
+        "ComfyUI/models/diffusion_models/"
+        "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+        "ComfyUI/models/text_encoders/"
+        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "ComfyUI/models/vae/minimax_h3_video_vae_fp16.safetensors",
+        "ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors",
     ):
         _write_model(root, relative)
     service = LocalModelRuntimeService(root, comfy_url="localhost:8189")
@@ -37,7 +40,8 @@ def test_local_model_inventory_distinguishes_installed_and_callable(
             True,
             {
                 "CheckpointLoaderSimple",
-                "Wan22ImageToVideoLatent",
+                "MiniMaxH3ImageToVideo",
+                "VAEDecodeAudio",
                 "CreateVideo",
                 "SaveVideo",
             },
@@ -48,7 +52,9 @@ def test_local_model_inventory_distinguishes_installed_and_callable(
     statuses = {model.model_id: model for model in inventory.models}
 
     assert statuses["juggernaut_xi"].callable is True
-    assert statuses["wan22_ti2v_5b"].callable is True
+    assert statuses["minimax_h3_fl2va"].installed is True
+    assert statuses["minimax_h3_fl2va"].callable is False
+    assert "显存" in statuses["minimax_h3_fl2va"].message
     assert statuses["flux_krea"].installed is False
     assert statuses["latentsync_1_6"].compatible is False
     assert inventory.gpu_name == "RTX Test"
