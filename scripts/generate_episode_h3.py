@@ -14,7 +14,7 @@ from app.services.gpu_service import GpuConnection, GpuServerService
 from app.services.video_service import VideoRenderService
 from workflows.minimax_h3.generate_video import H3_MODEL, H3_TEXT_ENCODER
 
-H3_GENERATION_REVISION = "h3_native_v2_identity_dialogue_transition"
+H3_GENERATION_REVISION = "h3_t8_native_v1"
 
 VOICE_CONTINUITY = {
     "旁白": "成熟中国男声，低沉温厚、冷静克制，近距离影视旁白，不朗诵、不拖腔",
@@ -181,6 +181,12 @@ def _video_spec(project_root: Path, episode_number: int, shot: dict) -> VideoRen
         width=832,
         height=480,
         engine_profile="minimax_h3_fl2va",
+        audio_mode_override=str(video.get("audio_mode_override") or ""),
+        reference_audio=(
+            (project_root / str(video["reference_audio"])).resolve()
+            if video.get("reference_audio")
+            else None
+        ),
     )
 
 

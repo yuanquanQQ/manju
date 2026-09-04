@@ -48,6 +48,9 @@ class VideoRenderSpec(BaseModel):
     width: int = Field(default=1280, ge=320, le=3840)
     height: int = Field(default=720, ge=240, le=2160)
     engine_profile: VideoEngineProfile = "comic_motion"
+    steps: int | None = Field(default=None, ge=1, le=120)
+    audio_mode_override: str = Field(default="", max_length=32)
+    reference_audio: Path | None = None
 
     @model_validator(mode="after")
     def validate_dimensions(self) -> VideoRenderSpec:
@@ -82,12 +85,13 @@ class VideoArtifactMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     engine_profile: str
     episode_number: int
     shot_number: int
     source_image: str
     end_image: str = ""
+    reference_audio: str = ""
     output_file: str
     subject_motion: str = ""
     environment_motion: str = ""

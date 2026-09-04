@@ -1,6 +1,8 @@
 from argparse import Namespace
 from pathlib import Path
 
+from app.domain.video import VideoRenderSpec
+from app.services.gpu_service import GpuServerService
 from scripts.generate_episode_h3 import (
     H3_GENERATION_REVISION,
     _native_dialogue_prompt,
@@ -11,6 +13,7 @@ from workflows.minimax_h3.generate_video import (
     H3_AUDIO_VAE,
     H3_MODEL,
     build_prompt,
+    build_t8_prompt,
     create_video_qc_sheet,
     find_generated_video,
     normalize_frame_count,
@@ -36,17 +39,30 @@ def test_h3_api_prompt_generates_joint_audio_video() -> None:
         fps=24,
         seed=42,
         filename_prefix="novel2anime/run/candidate_01",
+        engine="t8",
     )
 
     assert prompt["1"]["inputs"]["unet_name"] == H3_MODEL
-    assert prompt["7"]["class_type"] == "MiniMaxH3ImageToVideo"
+    assert prompt["7"]["class_type"] == "MiniMaxH3AudioConditioningT8"
+    assert prompt["7"]["inputs"]["task_type"] == "FL2VA"
+    assert prompt["7"]["inputs"]["audio_mode"] == "native"
     assert prompt["7"]["inputs"]["first_frame"] == ["5", 0]
     assert prompt["7"]["inputs"]["last_frame"] == ["6", 0]
     assert prompt["7"]["inputs"]["length"] == 124
-    assert prompt["14"]["inputs"]["vae"] == ["4", 0]
+    assert prompt["7"]["inputs"]["video_vae"] == ["3", 0]
+    assert prompt["7"]["inputs"]["audio_vae"] == ["4", 0]
+    assert prompt["8"]["class_type"] == "MiniMaxH3DualClockSamplerT8"
+    assert prompt["8"]["inputs"]["av_latent"] == ["7", 1]
+    assert prompt["8"]["inputs"]["sampler_name"] == "dual_clock_euler"
+    assert prompt["8"]["inputs"]["scheduler"] == "native_flow"
+    assert prompt["9"]["inputs"]["model"] == ["8", 0]
+    assert prompt["11"]["inputs"]["sampler"] == ["8", 1]
+    assert prompt["11"]["inputs"]["sigmas"] == ["8", 2]
+    assert prompt["12"]["class_type"] == "MiniMaxH3AVDecodeT8"
+    assert prompt["12"]["inputs"]["audio_vae"] == ["4", 0]
+    assert prompt["14"]["inputs"]["audio"] == ["12", 1]
     assert prompt["4"]["inputs"]["vae_name"] == H3_AUDIO_VAE
-    assert prompt["15"]["inputs"]["audio"] == ["14", 0]
-    assert prompt["16"]["class_type"] == "SaveVideo"
+    assert prompt["15"]["class_type"] == "SaveVideo"
 
 
 def test_h3_prompt_allows_first_frame_only() -> None:
@@ -59,10 +75,63 @@ def test_h3_prompt_allows_first_frame_only() -> None:
         fps=24,
         seed=1,
         filename_prefix="novel2anime/run/candidate_01",
+        engine="t8",
     )
 
     assert "6" not in prompt
     assert "last_frame" not in prompt["7"]["inputs"]
+    assert prompt["7"]["inputs"]["task_type"] == "I2VA"
+
+
+def test_t8_reference_audio_wires_drive_audio() -> None:
+    prompt = build_t8_prompt(
+        image_name="novel2anime/start.png",
+        positive_prompt="自然动作",
+        width=832,
+        height=480,
+        frame_count=124,
+        fps=24,
+        seed=1,
+        filename_prefix="novel2anime/run/candidate_01",
+        reference_audio_name="novel2anime/ref.wav",
+    )
+
+    assert prompt["7"]["inputs"]["drive_audio"] == ["17", 0]
+    assert prompt["17"]["class_type"] == "LoadAudio"
+    assert prompt["17"]["inputs"]["audio"] == "novel2anime/ref.wav"
+
+
+def test_t8_rejects_unknown_audio_mode() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="audio_mode"):
+        build_t8_prompt(
+            image_name="novel2anime/start.png",
+            positive_prompt="自然动作",
+            width=832,
+            height=480,
+            frame_count=124,
+            fps=24,
+            seed=1,
+            filename_prefix="novel2anime/run/candidate_01",
+            audio_mode="bogus",
+        )
+
+
+def test_official_engine_still_builds_stock_graph() -> None:
+    prompt = build_prompt(
+        image_name="novel2anime/start.png",
+        positive_prompt="自然动作",
+        width=832,
+        height=480,
+        frame_count=124,
+        fps=24,
+        seed=1,
+        filename_prefix="novel2anime/run/candidate_01",
+        engine="official",
+    )
+
+    assert prompt["7"]["class_type"] == "MiniMaxH3ImageToVideo"
 
 
 def test_find_generated_h3_video_uses_unique_prefix(tmp_path: Path) -> None:
@@ -282,3 +351,102 @@ def test_episode_h3_only_resumes_selected_candidates(tmp_path: Path) -> None:
 
     shot["video_generation"]["selected_video"] = candidate["file"]
     assert _valid_h3_candidate(project, shot) == (clip.resolve(), manifest.resolve())
+
+
+def test_t8_audio_mode_mapping() -> None:
+    spec = VideoRenderSpec(
+        episode_number=1,
+        shot_number=1,
+        source_image=Path("a.png"),
+        fps=24,
+        width=832,
+        height=480,
+        engine_profile="minimax_h3_fl2va",
+        native_audio_mode="native_full",
+    )
+    assert GpuServerService._h3_t8_audio_mode(spec) == "native"
+
+    override = spec.model_copy(
+        update={"audio_mode_override": "remix_source"}
+    )
+    assert GpuServerService._h3_t8_audio_mode(override) == "remix_source"
+
+    ambience = spec.model_copy(update={"native_audio_mode": "ambience_sfx_music"})
+    assert GpuServerService._h3_t8_audio_mode(ambience) == "native"
+
+    off = spec.model_copy(update={"native_audio_mode": "off"})
+    assert GpuServerService._h3_t8_audio_mode(off) == "native"
+
+
+def test_t8_cli_params_passthrough(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "source.png"
+    source.write_bytes(b"png")
+    reference = tmp_path / "ref.wav"
+    reference.write_bytes(b"wav")
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_file.write_text("秦风缓慢抬头", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_build_prompt(**kwargs):
+        captured.update(kwargs)
+        return {}
+
+    monkeypatch.setattr(
+        "workflows.minimax_h3.generate_video._copy_input",
+        lambda *_args: "source.png",
+    )
+    monkeypatch.setattr(
+        "workflows.minimax_h3.generate_video.build_prompt",
+        fake_build_prompt,
+    )
+    monkeypatch.setattr(
+        "workflows.minimax_h3.generate_video.request_json",
+        lambda *_args, **_kwargs: {"prompt_id": "prompt-1"},
+    )
+    monkeypatch.setattr(
+        "workflows.minimax_h3.generate_video.wait_for_prompt",
+        lambda *_args, **_kwargs: {},
+    )
+    generated = tmp_path / "generated.mp4"
+    generated.write_bytes(b"mp4")
+    monkeypatch.setattr(
+        "workflows.minimax_h3.generate_video.find_generated_video",
+        lambda *_args, **_kwargs: generated,
+    )
+
+    run(
+        Namespace(
+            comfy_root=str(tmp_path),
+            source_image=str(source),
+            end_image="",
+            reference_audio=str(reference),
+            output_dir=str(tmp_path / "output"),
+            positive_prompt="",
+            positive_prompt_file=str(prompt_file),
+            candidate_count=1,
+            seed=1,
+            run_name="test",
+            width=832,
+            height=480,
+            frame_count=124,
+            fps=24,
+            comfy_url="http://127.0.0.1:8188",
+            timeout_seconds=10,
+            engine="t8",
+            steps=6,
+            sampler_name="dual_clock_euler",
+            scheduler="native_flow",
+            shift_video=12.0,
+            shift_audio=3.0,
+            audio_mode="native",
+        )
+    )
+
+    assert captured["engine"] == "t8"
+    assert captured["steps"] == 6
+    assert captured["sampler_name"] == "dual_clock_euler"
+    assert captured["scheduler"] == "native_flow"
+    assert captured["shift_video"] == 12.0
+    assert captured["shift_audio"] == 3.0
+    assert captured["audio_mode"] == "native"
+    assert captured["reference_audio_name"] == "source.png"

@@ -1,782 +1,577 @@
-AI漫剧生成系统（V1）开发方案
+# novel2anime — AI 漫剧生成系统
 
-> **从这里开始：**[项目启动说明](docs/00-项目启动说明.md)  
-> 包含日常启动、首次安装、3090 连接、完整制作顺序、输出目录和故障排查。
+**输入一部中文长篇小说,输出一部完整的漫剧**(图片 + 视频 + 字幕 + 配音)。
 
-> 完善后的分阶段计划见：[AI 漫剧生成系统 V1：开发计划总览](docs/开发计划/README.md)。十个开发阶段均已拆分为独立 Markdown 文档。
+novel2anime 是一条**本地 AI 漫剧生成流水线**:由 Windows 桌面应用(PySide6)驱动,
+通过 SSH 调度远程 RTX 3090 GPU 服务器完成生图、AI 视频与音色克隆配音,全程本地
+可控、可断点续跑。当前以《绝世丹神》(项目名 `jueshi`,2550 章)为实际制作样例。
 
-桌面应用
+> **从这里开始**:[项目启动说明](docs/00-项目启动说明.md) —— 包含日常启动、首次安装、
+> 3090 连接、完整制作顺序、输出目录与故障排查。
+>
+> **开发蓝图**:[AI 漫剧生成系统 V1 开发计划总览](docs/开发计划/README.md)。
 
-本地简约桌面制作界面已经提供项目总览、角色定妆、声音角色库、本地资源包、分镜浏览、
-镜头视频生成、整集无声预览合成、逐镜头配音、字幕烧录、带声成片、任务日志
-和 GPU 服务器控制。
+---
 
-“本地资源包”可一键整理并打开人物、场景、人声和合成内容目录。用户可交付文件
-统一保存在 `outputs/episodes/<项目拼音_集号>/`，视频、字幕、逐镜头音频、生成
-清单和质检图分目录保存；文件名只使用拼音、数字和下划线。
+## 目录
 
-```powershell
-.\.venv\Scripts\python.exe main.py gui
+- [项目简介](#项目简介)
+- [特性一览](#特性一览)
+- [系统架构](#系统架构)
+- [制作流水线](#制作流水线)
+- [环境要求](#环境要求)
+- [安装](#安装)
+- [配置](#配置)
+- [启动](#启动)
+- [命令行参考](#命令行参考)
+- [从小说到成片:制作流程](#从小说到成片制作流程)
+- [外部依赖与模型](#外部依赖与模型)
+- [项目目录结构](#项目目录结构)
+- [数据与产物](#数据与产物)
+- [测试](#测试)
+- [文档索引](#文档索引)
+- [项目现状与已知限制](#项目现状与已知限制)
+
+---
+
+## 项目简介
+
+novel2anime 将一部长篇小说自动转化为分镜、画面、配音与成片。系统把传统动画/漫剧
+制作拆成一条可审计、可恢复的流水线:
+
+```text
+长篇小说 (TXT / Markdown / 章节 JSON)
+        │
+        ▼
+小说导入 → 结构化分析 → 分镜剧本 → 角色定妆 → 关键帧生图 → 配音 → 视频生成 → 对口型 → 合成成片
 ```
 
-也可以双击 `start_gui.bat`。详细操作见：[桌面应用使用指南](docs/02-桌面应用使用指南.md)。
-声音克隆、合成音色和对外发布前的检查见：
-[声音版权与授权说明](docs/03-声音版权与授权说明.md)。
+核心思路是 **「先建世界,再拍戏」**:
 
-## 源码交付、安装与补充依赖
+1. **建世界**:LLM 逐章抽取人物、地点、事件、对白与状态变化,连同原文证据写入 SQLite,
+   并导出为知识库(人物档案 / 世界观 / 时间线)。
+2. **写剧本**:导演 Agent 把每章拆成 18-28 个镜头,为每个镜头生成画面描写、人物动作、
+   环境细节、英文生图提示词、运镜、转场与连续性约束。
+3. **拍画面**:以人物定妆照与视觉身份指纹锁跨镜头一致,经 ComfyUI 生图、MiniMax H3
+   FL2VA 生成视频、CosyVoice / Edge TTS 配音、LatentSync 对口型,最后合成带中文字幕
+   的成片。
 
-源码压缩包不包含 Python 虚拟环境、本地大模型、生成素材、项目数据、日志和任何
-密码。解压后按以下步骤在新电脑安装；推荐使用 **Python 3.11 或 3.12（64 位）**。
+---
+
+## 特性一览
+
+**小说处理**
+- 支持 TXT、Markdown、章节 JSON 目录导入,自动编码探测(UTF-8 / UTF-16 / GB18030)。
+- 按“第X章 / 序章 / 楔子 / chapter N”自动切分章节,产出版本化标准章节。
+- LLM 结构化分析:实体、事件、对白、状态变化全部带原文证据区间与置信度,严格 Schema。
+- 分析结果可复用(`input_hash` 去重),支持 `--start/--end` 范围控制与断点续跑。
+
+**分镜与导演 Agent**
+- 每章自动生成 18-28 个镜头,总时长 60-90 秒,符合影视节奏。
+- 每镜头包含场景描写、人物刻画、环境细节、英文生图提示词、运镜、时长与转场。
+- 镜头间连续性规划:入镜/出镜状态、动作阶段、匹配锚点、参考帧,跨镜保持人脸/服装/站位。
+
+**角色一致性**
+- 为每个角色构建「不可变身份指纹」文本锁(面容 / 眼型 / 发型 / 服装配色 / 标志配件)。
+- 支持 SDXL IP-Adapter Plus Face 人脸身份参考(单人女性镜头)与文本身份锁(男性角色)。
+- 角色定妆候选图记录生成模型、时间与种子,可“设为定妆 / 解除定妆”。
+
+**图片生成**
+- ComfyUI 后端,预设模型:FLUX.1 Krea Dev FP8(默认)与 Juggernaut XI(SDXL)。
+- 6 种视觉风格预设(真人电影 / 简笔画 / 油画 / 中国水墨 / 迪士尼动画感 / 游戏 CG)。
+- **图片不满意时可用 FLUX.1 Kontext Dev FP8 修改**:读取原图按“问题与修改要求”生成
+  1-4 个候选,支持严格保留 / 平衡 / 较大调整三档,原图与修改历史全程保留。
+
+**视频生成**
+- 默认引擎 **MiniMax H3 FL2VA + T8 音视频增强包**(本地权重经 ComfyUI 运行,非云 API)。
+  T8 图(`comfyui-minimax-h3-audio-T8`)以联合音视频 conditioning + 双钟采样器替换官方图:
+  视频与音频 latent 各按独立 schedule 去噪,原生对白 / 音效 / 配乐由提示词直接合成,
+  对白清晰度与声画同步优于官方节点;支持首尾帧输入与可选参考音频(`drive_audio`)。
+- 三种音频模式不变:`off` 静音、`ambience_sfx_music`(默认)环境音 + 音效 + 音乐、
+  `native_full` 原生对白。`--engine official` 可一键回退官方节点图。
+- 生成速度由官方图 20 步放开为参数化(`--steps`,T8 基线 4–8 步),CLI 与镜头规格均可调。
+- 备选 **漫画动效**(确定性 FFmpeg 渲染器)用于静态推拉预览,含 8 种运镜预设。
+
+**配音与字幕**
+- 逐镜头自动旁白 / 角色对白 / 自定义文案 / 静音四种模式。
+- 音色引擎:Edge TTS(在线,免 Key)或 **Fun-CosyVoice3-0.5B 本地音色克隆**(RTX 3090)。
+- 声音角色库:导入本人 / 已授权 / 原创合成的参考音色,自动/手动选角并锁定。
+- 输出 MP3、逐镜头 SRT、整集 SRT、带 AAC 音轨的 MP4;统一 1280×720 / 24fps / 48kHz
+  双声道,响度标准化,中文字幕直接烧录进画面。
+
+**对口型 (LatentSync 1.6)**
+- 逐镜头生成口型,多人镜头按说话人自动跟踪目标脸(InsightFace 身份向量)。
+- 匹配分数低于安全阈值即停止,不回退到“面积最大的人脸”。
+- 批量整集口型可续跑,自动跳过旁白与已完成镜头。
+
+**任务系统**
+- SQLite 持久化任务状态机(PENDING → RUNNING → SUCCEEDED / FAILED / RETRYING /
+  PAUSED / CANCELED / STALE),支持暂停、取消、恢复、心跳与中断检测。
+- 长任务可断点续跑;崩溃后 `recover` 识别失去心跳的任务并安全暂停。
+
+**桌面应用**
+- PySide6 图形界面:项目总览、小说处理、角色定妆、声音角色库、本地资源包、分镜浏览、
+  镜头视频生成、整集无声预览、逐镜头配音、字幕烧录、带声成片、任务日志、GPU 服务器控制。
+
+---
+
+## 系统架构
+
+项目采用 **四层架构**:`CLI / GUI → Pipeline → Agent → Data`。
+
+```text
+┌───────────────────────────────────────────────────────────────┐
+│  展示层  Typer CLI (main.py) │ PySide6 桌面应用 (app/ui)      │
+└──────────────────────────────┬────────────────────────────────┘
+                               │
+┌──────────────────────────────▼────────────────────────────────┐
+│  Pipeline 层  任务编排、状态管理、断点恢复                     │
+│   app/pipeline: ingest · compile_novel · storyboard · pacing · │
+│   character_identity · audio_timing · continuity · generate    │
+└──────────────────────────────┬────────────────────────────────┘
+                               │
+┌──────────────────────────────▼────────────────────────────────┐
+│  Agent 层  LLM 智能体                                         │
+│   novel_extractor(抽取) · director(导演分镜) · validator(验收) │
+└──────────────────────────────┬────────────────────────────────┘
+                               │
+┌──────────────────────────────▼────────────────────────────────┐
+│  Data 层  SQLite + JSON + FAISS                               │
+│   源文档 → 编译章节 → 分析运行 → 实体/事件/对白/状态 → 分镜 JSON │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**本地 / 远程分工**:桌面应用(Windows)负责操作、保存与合成;远程 RTX 3090 服务器负责
+计算密集型生成(ComfyUI 生图 / MiniMax H3 视频 / CosyVoice 配音 / LatentSync 口型),
+通过 SSH(paramiko)通信,服务器密码只保存在应用内存、不写入磁盘。
+
+**核心代码包**:
+
+| 目录 | 职责 |
+|---|---|
+| `app/adapters/` | 外部服务适配器:LLM(OpenAI 兼容协议)、ComfyUI(工作流提交/进度/下载) |
+| `app/agents/` | LLM 智能体:novel_extractor(抽取)、director(导演分镜) |
+| `app/compiler/` | 小说导入、分块、结构化分析与 SQLite 持久化 |
+| `app/core/` | 基础能力:配置、日志、原子文件读写、环境诊断、命名 |
+| `app/database/` | SQLite(SQLAlchemy):引擎 / ORM 模型 / 迁移 |
+| `app/domain/` | Pydantic 数据契约:小说、分镜、视频、音频、项目、任务 |
+| `app/knowledge/` | 知识库导出(world / characters / timeline)+ FAISS 检索 |
+| `app/pipeline/` | 业务流水线编排(见上) |
+| `app/services/` | 领域服务与渲染后端:任务、项目、配音、口型、GPU 等 |
+| `app/ui/` | PySide6 桌面页面 + Streamlit 数据库浏览面板 |
+| `app/validator/` | 分析质量随机抽查与准确率报告 |
+
+---
+
+## 制作流水线
+
+以 CLI 视角,一条完整流水线如下(`<project>` 为项目名,如 `jueshi`):
+
+```text
+main.py import-novel <project> <source>    # 1. 导入小说 → 版本化标准章节
+main.py compile       <project>             # 2. 逐章结构化分析 → SQLite + analysis JSON
+main.py storyboard    <project>             # 3. 分镜剧本 → production/episodes/episode_N.json
+main.py generate      <project> --type character  # 4. (可选)CLI 生图;角色定妆多在 GUI 完成
+     …（GUI:关键帧生图 → 视频 H3 → 配音 → 对口型 → 合成成片）
+```
+
+| 阶段 | 实现模块 | 产物 |
+|---|---|---|
+| 项目脚手架 | `app/services/project_service.py:create_project` | `projects/<slug>/`、`project.json`、`config.yaml` |
+| 小说导入 | `app/compiler/importer.py:import_novel` | `novel/chapters/ch_*.json` + `CompiledChapter` |
+| 结构化分析 | `app/compiler/analyzer.py:analyze_chapter` | `ChapterAnalysis` → `production/analysis/*.json` |
+| 分镜生成 | `app/agents/director.py` + `app/pipeline/storyboard.py` | `production/episodes/episode_*.json` |
+| 节奏 / 时长 | `app/pipeline/pacing.py` | 目标镜头数、60-90 秒集时长 |
+| 角色一致性 | `app/pipeline/character_identity.py` | 每角色「视觉身份指纹」文本 |
+| 生图 | ComfyUI(本地/远端)+ `image_models` | 定妆照、分镜首帧 |
+| 视频 | MiniMax H3 FL2VA / 漫画动效 | 逐镜头 MP4 |
+| 配音 | `audio_service`(Edge/CosyVoice) | 逐镜头音频 + SRT + 带声成片 |
+| 对口型 | LatentSync 1.6 | 逐镜头口型视频 |
+| 合成 | `video_service.VideoRenderService` | `outputs/episodes/<拼音>_<集号>/` 成片包 |
+
+---
+
+## 环境要求
+
+- **操作系统**:Windows 10 / 11(桌面应用面向 Windows)
+- **Python**:3.11 或 3.12(64 位),推荐 3.11
+- **磁盘**:至少 15 GB 本地空间(不含模型)
+- **FFmpeg**:可通过 `imageio-ffmpeg` 使用随包二进制,无需单独安装
+- **远程 GPU 服务器**(可选但推荐):RTX 3090 及以上的 SSH 可达实例,用于生图 / H3 视频 /
+  CosyVoice / LatentSync;本地仅做文本分析与 FFmpeg 合成
+- **网络**:安装依赖需联网;Edge TTS 运行时需联网(不需要 API Key);远端模型下载
+  统一走 `HF_ENDPOINT=https://hf-mirror.com` 镜像
+
+> 本地不要求 NVIDIA 显卡,也不要在本机安装 CUDA——计算在远程 3090 上进行。
+
+---
+
+## 安装
+
+在 PowerShell 中进入项目根目录执行:
 
 ```powershell
-# 1. 打开 PowerShell，进入解压后的项目目录
-cd <解压后的项目目录>
-
-# 2. 创建独立 Python 环境
+# 1. 创建独立虚拟环境（需已安装 Python 3.11/3.12）
 py -3.11 -m venv .venv
 
-# 3. 升级安装工具并安装全部运行依赖
+# 2. 升级 pip 并安装运行依赖
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m pip install -e .
 
-# 4. （可选）安装测试与代码检查工具
+# 3.（可选）安装开发工具：pytest / pytest-cov / ruff
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 
-# 5. 创建本机配置文件
+# 4. 创建本机配置文件
 Copy-Item .env.example .env
-
-# 6. 启动桌面应用
-.\start_gui.bat
 ```
 
-如果没有 `py -3.11`，请先从 [Python 官网](https://www.python.org/downloads/)
-安装 Python 3.11/3.12，并在安装界面勾选“Add Python to PATH”；随后将上述命令中的
-`py -3.11` 改为 `python`。首次安装 `llama-cpp-python` 可能需要数分钟。
+如果没有 `py -3.11`,请从 [Python 官网](https://www.python.org/downloads/) 安装
+Python 3.11/3.12 并在安装界面勾选 **Add Python to PATH**,然后把命令里的 `py -3.11`
+改为 `python`。首次安装 `llama-cpp-python` 可能需要数分钟。
 
-### 补充或更新依赖
+### 严格复现安装
 
-新增 Python 第三方库时，请同时把它写入 `requirements.txt`；若这是应用运行时必需的
-库，也要同步写入 `pyproject.toml` 的 `project.dependencies`，然后在本机执行：
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m pip install -e .
-```
-
-若要让其他人严格复现当前 Windows + Python 3.12 环境，优先使用锁定文件：
+`requirements.lock` 为 **Windows / CPython 3.12 验证锁**(2026-07-23 生成,63 个精确版本),
+仅适用于其开头标注的平台与 Python 版本;其他环境请使用 `requirements.txt`。
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements.lock
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
 
-`requirements.lock` 仅适用于其文件开头标注的平台与 Python 版本；在其他 Python
-版本或操作系统上，请改用 `requirements.txt`。更新依赖版本后，应在目标环境重新生成并
-验证锁定文件，再将新的 `requirements.lock` 一并提交。
+### 补充或更新依赖
 
-`.env` 中的 `LLM_MODEL_PATH` 与 `LOCAL_AI_ROOT` 必须改成新电脑的实际路径。小说
-自动处理还需要自行准备 Qwen GGUF 文本模型；本机生图/视频模型也需自行下载。
-若使用远程 GPU，只需在应用的“连接设置”填写服务器地址、端口、用户名和密码，
-密码不要写入 `.env` 或发送给他人。远程模型部署方式见
-[项目启动说明](docs/00-项目启动说明.md)。
+新增 Python 第三方库时,同时写入 `requirements.txt`;若为运行时必需库,也同步写入
+`pyproject.toml` 的 `project.dependencies`,然后在本机重新安装。
 
-可用下面命令验证安装（可选）：
+---
 
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
-```
+## 配置
 
-自动化制作链路
+配置优先级:**环境变量 > 项目根目录 `.env` > 代码默认值**(自带极简 `.env` 解析器)。
 
-小说处理完成后，应用会为每个镜头同时准备生图提示词、人物动作、环境动作、
-连续性约束、负面提示词、运镜、时长和转场。默认勾选“分镜完成后自动生成
-缺失首帧并回填到视频任务”，GPU 与 ComfyUI 可用时会直接批量生图并写回
-对应镜头；条件不满足时保留分镜并明确显示“待自动生成”。
+`.env.example` 中全部变量:
 
-“分镜脚本”页提供“自动补全缺失画面”，用于已有项目或失败后的断点补全；
-“重做连续首帧”会把整集拆成连续组，保存入镜/出镜状态、动作阶段、匹配锚点
-和参考镜头。同一场景且出场人物集合相同的镜头会按顺序使用上一镜头做
-图生图承接；人物阵容变化、闪回或换场时自动断开图像引用，防止错误人物累积。
-首帧默认取主要动作发生前一刻，避免正面对称站桩和定妆照式构图。
+| 变量 | 含义 | 默认值 |
+|---|---|---|
+| `LLM_BASE_URL` | OpenAI 兼容 LLM 地址(LM Studio / Ollama / vLLM / llama.cpp) | `http://127.0.0.1:1234` |
+| `LLM_MODEL` | LLM 模型名 | `qwen/qwen3.5-9b` |
+| `LLM_TIMEOUT` | LLM 请求超时(秒) | `600` |
+| `LLM_MAX_RETRIES` | 最大重试次数 | `3` |
+| `LLM_MAX_TOKENS` | 单次生成最大 token 数 | `4096` |
+| `LLM_CONTEXT_SIZE` | 上下文长度(llama.cpp `--n_ctx`) | `8192` |
+| `LLM_MODEL_PATH` | 本地 GGUF 模型路径;留空表示不在本机启动 llama.cpp | `models/llm/Qwen.Qwen3.5-9B.Q4_K_M.gguf` |
+| `EXTRACT_MAX_CHARS` | 单章抽取最大字符数 | `6000` |
+| `EXTRACT_CONCURRENCY` | 抽取并发数 | `1` |
+| `COMFYUI_URL` | ComfyUI 服务地址 | `localhost:8189` |
+| `COMFYUI_TIMEOUT` | ComfyUI 执行超时(秒) | `600` |
+| `LOCAL_AI_ROOT` | 本地生成模型根目录(模型中心扫描) | `models/generative` |
+| `GPU_SSH_HOST` | GPU 服务器 SSH 地址 | *(空)* |
+| `GPU_SSH_PORT` | SSH 端口 | `22` |
+| `GPU_SSH_USER` | SSH 用户 | `root` |
+| `SQLITE_BUSY_TIMEOUT_MS` | SQLite busy timeout | `30000` |
+| `PIPELINE_STALE_AFTER_SECONDS` | 任务心跳超时(判定 STALE) | `300` |
 
-角色图或分镜首帧局部效果不好时，点击图片上的“不满意 · 修改此图”。应用会
-使用 FLUX.1 Kontext 读取原图，根据“问题与修改要求”、目标提示词和明确排除项
-生成 1～4 个候选；可选择严格保留、平衡修改或较大调整。只有点击“使用这张”
-才会切换当前图，原图、其他候选、模型、时间、种子和修改说明都会保留。分镜页
-可用“历史版本”随时比较或切回。完整说明见：
-[图片不满意时的修改功能](docs/04-图片不满意时的修改功能.md)。
+**要点**:
 
-“视频生成”页默认开启“按镜头动作自动选择模型”，动作路由统一返回默认引擎
-MiniMax H3 FL2VA（minimax_h3_fl2va），不再区分 Wan 的 TI2V/FLF2V。H3 使用
-首尾帧输入，需要明确动作终点时可先准备结束关键帧再生成；“漫画动效”仅用于
-静态推拉预览，不是 AI 视频引擎。
+- `.env` 中的 `LLM_MODEL_PATH` 与 `LOCAL_AI_ROOT` 必须改成新电脑的实际路径。
+- GPU 服务器 **SSH 密码不要写入 `.env`**,请在桌面应用“连接与设置”中输入(仅存内存)。
+- 旧变量名 `OLLAMA_URL` / `OLLAMA_MODEL` / `OLLAMA_TIMEOUT` / `OLLAMA_MAX_RETRIES`
+  仍然兼容(优先读 `LLM_*`)。
+- 所有生成模型/提示词配置有安全默认值,不配置即可运行(文本分析需自行准备 Qwen GGUF)。
 
-H3 视频自带原生音效/对白。可在“连接与设置”点击“安装/修复 MiniMax H3”，或运行
-`scripts/gpu/minimax_h3/install.sh`。安装器会下载 4 个 H3 权重（约 42GB），固定支持
-`HF_ENDPOINT=https://hf-mirror.com`、断点续传、文件大小校验，并强制保留至少
-12GiB 服务器空间；不会自动删除其他用途不确定的模型。
+---
 
-动作结束帧和图片编辑都使用专门的 `FLUX.1 Kontext Dev FP8` 参考图编辑器，不再用
-Krea 或 Juggernaut 的普通 img2img 冒充姿态编辑。可在“连接与设置”点击“安装/修复
-FLUX.1 Kontext”，或运行 `scripts/gpu/flux_kontext/install.sh`；模型位于
-`/root/autodl-tmp/ComfyUI/models/diffusion_models/flux1-dev-kontext_fp8_scaled.safetensors`
-（精确大小 11,904,640,136 字节）。H3 的首尾帧输入与角色图、分镜首帧修改共用这套
-参考图编辑器；为 H3 准备尾帧时会优先执行明确的动作姿态变化、输出回视频目标分辨率，
-并同时检查细节差异与低频构图一致性；清单会标注 `model_id=flux_kontext`、模型文件名
-和生成时间。
+## 启动
 
-配音与字幕
+### 桌面应用(推荐)
 
-左侧“声音角色库”是独立的选角与音色管理界面：
-
-- “声音库”页签可导入本人、已获授权或原创合成的参考声音，保存逐字参考台词、
-  年龄感、性别、气质、音高、语速、标签和默认表演指令；
-- “人物自动选声”会读取各集人物资料、出场描述和对白说话人，推断人物特征并
-  推荐声音；任意人物均可手动改配，手动结果会锁定，不被下一次自动匹配覆盖；
-- “应用到全部分镜”才会把选择写入镜头配音参数。若声音发生变化，应用会保留
-  旧口型结果作为历史文件、恢复干净源视频，并把相关口型任务标记为待重做；
-- 共用声音库存放在 `projects/_voice_library/`，项目内的分配表存放在
-  `projects/<项目名>/production/voice_assignments.json`。
-
-为避免冒充和未授权使用，导入克隆音色前必须声明声音属于本人、已获明确授权
-或为原创合成音色，并确认用途。建议使用 3–15 秒、无音乐、无混响、单人清晰
-语音，且参考台词必须与录音逐字一致。
-
-“视频生成”页的“配音与字幕”标签支持逐镜头设置：
-
-- 自动旁白、角色对白/自定义文案、静音三种模式；
-- Edge 中文音色或 CosyVoice 3 本地角色音色、语速和字幕开关；
-- CosyVoice 参考音频、逐字参考台词、情绪/表演指令和单句试听；
-- 同名说话人在一批镜头中自动复用同一角色音色；
-- 未提供参考音频时自动创建基础音色，服务器异常时可回退 Edge TTS；
-- 文案留空时自动使用镜头画面描述；
-- 生成 MP3、逐镜头 SRT、整集 SRT 和带 AAC 音轨的 MP4；
-- 视频生成前可点击“按配音规划时长”，无需 GPU 即可估算整集时长、标记长对白
-  拆镜，并把目标时长写回下一次视频任务；
-- 历史视频短于语音时不再直接冻结末帧，而是将已有动作平滑铺满时间线；真实
-  语音时长同时回写为“需重生成/需拆镜”，供下一轮生成正确长度的视频；
-- 输出前统一到 1280×720、24fps、48kHz 双声道，并进行响度标准化；
-- 中文字幕直接烧录进画面，普通播放器无需额外加载字幕文件。
-
-Edge TTS 需要联网但不需要 API Key。高质量本地引擎使用
-`Fun-CosyVoice3-0.5B-2512`，在 RTX 3090 上进行中文零样本音色克隆；服务只监听
-服务器 `127.0.0.1:50000`，桌面应用通过 SSH 上传参考音频、提交文案并下载 WAV。
-
-服务器目录：
-
-```text
-/root/cosyvoice-runtime/CosyVoice                 # 官方推理代码
-/root/cosyvoice-env                               # 独立 Python 3.10 环境
-/root/cosyvoice-models/Fun-CosyVoice3-0.5B        # 推理必需模型
-/root/cosyvoice-service                           # HTTP 包装、日志与启停脚本
-```
-
-可复用部署文件位于 `scripts/gpu/cosyvoice/`。模型下载脚本固定读取
-`HF_ENDPOINT=https://hf-mirror.com`，只下载单卡推理必需文件，不下载 RL、
-批处理 tokenizer 和 TensorRT 权重。开始生图或视频生成任务（H3）前，应用会自动停止
-CosyVoice 释放显存；需要配音时再按需启动。
-
-每个对白镜头会保存独立的口型任务参数，包括 LatentSync 版本、目标人物和
-目标脸模式。“连接与设置”可以检测或安装官方 LatentSync 1.6；模型就绪后，
-“配音与字幕 → 生成当前镜头口型”会自动生成当前对白音频、释放 ComfyUI/
-CosyVoice 显存、执行口型推理、下载结果并选为当前镜头视频。多人镜头的
-“按说话人自动跟踪”会读取已锁定定妆照，通过 InsightFace 身份向量选择目标脸；
-匹配分数低于安全阈值时直接停止，不回退到面积最大的人脸。“批量生成整集口型”
-会跳过旁白和已完成镜头，列出缺少视频、定妆照或画面目标人物的阻塞项，并支持
-失败后从未完成镜头续跑。
-
-LatentSync 服务器目录：
-
-```text
-/root/autodl-tmp/LatentSync          # 官方代码和 1.6 权重
-/root/autodl-tmp/latentsync-env      # 独立 Python 3.10/CUDA 环境
-/root/autodl-tmp/huggingface         # 持久化 VAE/HF 缓存
-```
-
-可复用安装与运行脚本位于 `scripts/gpu/latentsync/`，统一使用
-`HF_ENDPOINT=https://hf-mirror.com`。
-
-锁定定妆照会真正进入分镜生图流程，而不再只保存在界面状态中。服务器端的
-SDXL 人脸身份参考使用 IP-Adapter Plus Face，文件位于：
-
-```text
-/root/autodl-tmp/ComfyUI/models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors
-/root/autodl-tmp/ComfyUI/models/ipadapter/ip-adapter-plus-face_sdxl_vit-h.safetensors
-```
-
-可在“连接与设置”点击“安装人脸身份参考”，或运行
-`scripts/gpu/ipadapter/install.sh`。脚本使用 HF 镜像、断点续传和 SHA-256
-校验。实测 IP-Adapter Plus Face 会把过于柔美的男性参考放大成女性特征，因此
-男性角色默认使用经过验证的性别、五官和服装文本身份锁；女性单人镜头才启用
-SDXL 身份适配。Flux Krea 当前使用文本身份锁，避免普通图生图复制定妆照构图。
-
-“连接与设置”中的“本地生成模型中心”会检测本机 GPU、显存、磁盘、ComfyUI、
-模型文件和必要节点。未填写服务器密码时，角色定妆会尝试调用本机 ComfyUI；
-模型未安装或显存不足时会显示明确原因，不会把“已下载”误报为“可调用”。
-
-安装或更新依赖：
+双击 `start_gui.bat`,或:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py gui
 ```
 
-也可以从命令行重新生成某一集的配音成片：
+### 环境诊断
 
 ```powershell
-.\.venv\Scripts\python.exe -m scripts.generate_episode_dubbing --project jueshi --episode 1
+.\.venv\Scripts\python.exe main.py doctor --skip-llm
+.\.venv\Scripts\python.exe main.py info
 ```
 
-目标
+`doctor` 检查 Python 版本、SQLite、ffmpeg/ffprobe、NVIDIA GPU、磁盘空间、LLM 连通性与
+项目数据库完整性。
 
-输入一本长篇小说（TXT/Markdown）
+---
 
-输出一部完整的漫剧（图片 + 视频 + 字幕 + 配音）
+## 命令行参考
 
-全程本地运行（RTX3090）
+`main.py` 使用 Typer,提供 19 个命令(`python main.py` 显示帮助)。
 
-开发语言：Python
+### 项目与运维
 
-第一阶段：项目框架（Project Foundation）
-目标
+| 命令 | 说明 |
+|---|---|
+| `create NAME [--display-name]` | 新建项目目录(含 project.json / config.yaml / 数据库迁移) |
+| `gui` | 启动本地桌面制作应用 |
+| `info [NAME]` | 显示 LLM 配置与目录状态 |
+| `doctor [NAME] [--skip-llm]` | 本地环境体检 |
+| `status NAME [--state] [--limit]` | 查看任务状态 |
+| `pause NAME JOB_ID` | 暂停等待中任务,或向运行中任务发送协作暂停 |
+| `cancel NAME JOB_ID` | 取消等待中任务,或发送协作取消 |
+| `resume NAME JOB_ID` | 把 PAUSED / FAILED / STALE 任务恢复为 PENDING |
+| `recover NAME [--stale-after]` | 识别失去心跳的任务并安全暂停 |
+| `clean-cache NAME [--yes]` | 清理可重建的项目 `cache/` |
+| `restore-db NAME BACKUP [--yes]` | 从 `database/` 内备份恢复数据库(恢复前自动安全备份) |
 
-建立整个工程框架。
+### 小说处理与分析
 
-这一阶段不需要AI生成任何内容。
+| 命令 | 说明 |
+|---|---|
+| `import-novel NAME SOURCE [--limit]` | 导入 TXT / Markdown / 章节 JSON 目录 → 版本化标准章节 |
+| `ingest NAME [--chapters-dir] [--limit] [--force]` | (旧流程)扫描 `chapters/*.json` 调 LLM 抽取入库 |
+| `compile NAME [--limit / --start / --end] [--force]` | 对标准章节执行带原文证据的结构化分析 |
+| `storyboard NAME [--limit / --start / --end] [--list]` | 将已分析章节转成分镜脚本 |
+| `validate NAME [--sample-count] [--seed]` | 随机抽查分析质量,计算准确率 |
+| `knowledge NAME --action export\|search --query` | 导出知识库或语义搜索 |
 
-技术
-Python 3.11
-Conda
-Pydantic
-Typer（CLI）
-Loguru
-SQLite
-SQLAlchemy
-Poetry/uv
-目录
+### 图片生成
+
+| 命令 | 说明 |
+|---|---|
+| `generate NAME [--type] [--limit] [--width/--height/--steps/--cfg/--seed]` | 从数据库实体取描述调 ComfyUI 生图 |
+| `generate-custom NAME PROMPT [--negative] [...]` | 用自定义提示词调 ComfyUI 生图 |
+
+> CLI 覆盖项目管理、导入、分析、分镜、生图、验收与运维;配音、视频、口型、合成等
+> 生产步骤主要在桌面应用中操作,也可通过 `scripts/` 下的一键脚本调用。
+
+---
+
+## 从小说到成片:制作流程
+
+### 1. 小说处理
+
+进入桌面应用「小说处理」:导入 TXT / Markdown / 已有章节数据 → 点击处理 → 等待章节切分、
+人物抽取与分镜生成。结果不满意时可“重新处理”,旧结果先备份到 `production/backups/`。
+
+本地文本模型默认:
+```text
+models/llm/Qwen.Qwen3.5-9B.Q4_K_M.gguf   # LLM_MODEL_PATH
+http://localhost:1234/v1                  # LLM_BASE_URL（本机文本分析，非 3090）
+```
+
+### 2. 角色定妆
+
+「角色定妆」:选择视觉风格 → 修改正向/负向提示词与定妆预设 → 选择一个或多个生图模型
+生成候选 → 对满意候选「设为定妆」。每张候选图都记录生成模型与精确到秒的生成时间。
+
+### 3. 分镜脚本与首帧
+
+「分镜脚本」:检查每镜头的画面描述、动作、环境动作、运镜、时长与转场 → 直接修改提示词
+→ 保存 → 缺图镜头「自动补全缺失画面」→ 已有首帧僵硬时「重做连续首帧」。
+
+连续首帧采用**保守引用**:仅当同场景且出场人物集合完全一致时,下一镜头才以上一镜头做
+图生图参考;人物阵容改变 / 闪回 / 换场自动断开引用,只继承场景轴线、光向、道具等文字
+锚点,防止错误人物累积。首帧优先取动作发生前一刻,避免正面对称站桩。
+
+### 4. MiniMax H3 视频
+
+「视频生成」视频标签:选择分集与镜头 → 确认首帧(需要动作终点时可准备尾帧,支持首尾帧
+输入)→ 默认引擎 MiniMax H3 FL2VA(T8 音视频增强)→ 检查自动填入的人物动作 / 环境动作 /
+负面提示词 / 运镜 / 时长 → 生成 → 合成整集预览。
+
+H3 自带原生音效 / 对白:`off` 静音、`ambience_sfx_music`(默认)环境音 + 音效 + 音乐、
+`native_full` 原生对白。T8 图以联合音视频 conditioning + 双钟采样器生成,对白与音效直接
+由提示词合成,声画同步优于官方节点;回退官方图用 `--engine official`。提示:首帧脸部清晰、
+四肢完整,动作提示词一次只描述一个主要动作;桌面端「连接与设置」需先安装/修复 T8 音频包。
+
+### 5. 配音、字幕与对口型
+
+「视频生成」→「配音与字幕」:选择自动旁白 / 角色对白 / 自定义文案 / 静音 → 选择
+CosyVoice 3·3090 本地音色克隆或 Edge 中文音色 → (CosyVoice)选择 3-15 秒清晰单人参考音频
+并填写逐字参考台词、情绪 / 表演指令 → 试听 → 生成带声成片。
+
+对白镜头在 LatentSync 就绪后可「生成当前镜头口型」;多人镜头按说话人自动跟踪目标脸。
+最终输出逐镜头音频、逐镜头 SRT、整集 SRT 与带 AAC 音轨的 MP4,字幕直接烧录进画面。
+
+### 6. 交付产物
+
+可交付文件统一保存在:
+
+```text
+outputs/episodes/<项目拼音>_<集号>/
+├── shipin/    # 最终 MP4
+├── zimu/      # 整集与分段 SRT
+├── yinpin/    # 逐镜头配音
+├── qingdan/   # 整集与分段清单
+└── zhijian/   # 质检图片
+```
+
+文件名只使用拼音、数字和下划线。桌面应用「本地资源包」页可一键整理并打开这些目录。
+
+---
+
+## 外部依赖与模型
+
+| 服务 | 角色 | 连接方式 | 位置 |
+|---|---|---|---|
+| **LLM**(OpenAI 兼容) | 结构化抽取 / 导演分镜 / 验收 | HTTP `/v1/chat/completions`,无鉴权头 | 本机 `localhost:1234`(llama.cpp / LM Studio / Ollama / vLLM) |
+| **ComfyUI** | 生图 / H3 视频 / 口型工作流后端 | HTTP + WebSocket,无 API Key | 本机 `localhost:8189` 或远程 3090 |
+| **GPU 服务器** | 远程计算(RTX 3090) | SSH(paramiko),密码会话内输入 | `GPU_SSH_HOST:GPU_SSH_PORT` |
+| **MiniMax H3 FL2VA** | AI 视频(本地权重,非云 API) | 经远程 ComfyUI 运行 | 3090 ComfyUI 模型目录(≈42 GB,4 个权重) |
+| **MiniMax H3 Audio T8 包** | H3 音视频增强自定义节点(纯 Python,无 pip 依赖) | 经远程 ComfyUI 运行 | 3090 `custom_nodes/comfyui-minimax-h3-audio-T8`,桌面端「连接与设置」一键安装/修复 |
+| **FLUX.1 Kontext Dev FP8** | 图片修改 / 动作尾帧编辑器 | 经 ComfyUI 运行 | 3090(11.9 GB) |
+| **Fun-CosyVoice3-0.5B** | 本地音色克隆 TTS | HTTP `127.0.0.1:50000` | 3090 `/root/cosyvoice-models/` |
+| **Edge TTS** | 在线 TTS(免 Key) | 网络 | 内置 6 个中文音色预设 |
+| **LatentSync 1.6** | 对口型 | 远程 SSH + ComfyUI 工作流 | 3090(需 ≥18 GB 显存) |
+| **IP-Adapter Plus Face** | SDXL 人脸身份参考 | 经 ComfyUI 运行 | 3090 |
+
+**部署脚本**位于 `scripts/gpu/`,全部使用 `HF_ENDPOINT=https://hf-mirror.com` 镜像、
+断点续传与文件大小校验;桌面应用「连接与设置」可一键检测 / 安装 / 修复。
+
+**显存协调**:CosyVoice 与视频 / 图片引擎会争用 3090 显存。应用在开始生图或 H3 视频前
+自动停止 CosyVoice,需要配音时再按需启动;对口型运行前也会释放 ComfyUI / CosyVoice。
+
+---
+
+## 项目目录结构
+
+```text
 novel2anime/
-
-    app/
-
-        core/
-        agents/
-        compiler/
-        database/
-        renderer/
-        pipeline/
-
-    models/
-
-    workflows/
-
-    projects/
-
-    tests/
-
-    docs/
-输出
-
-能够执行：
-
-python main.py
-
-能够创建一个新项目：
-
-python main.py create my_project
-
-输出：
-
-projects/
-
-    my_project/
-
-        novel/
-
-        database/
-
-        assets/
-
-        outputs/
-验收
-
-✅ 可以创建项目
-
-✅ 可以读取配置
-
-✅ SQLite初始化成功
-
-第二阶段：Novel Compiler（小说编译器）
-
-这是整个项目最重要的一步。
-
-输入
-chapter001.md
-
-chapter002.md
-
-...
-
-chapter300.md
-工作
-
-逐章读取。
-
-每章执行：
-
-读取章节
-
-↓
-
-LLM解析
-
-↓
-
-输出JSON
-
-↓
-
-数据库更新
-输出
-
-例如：
-
-{
-    "chapter":35,
-
-    "new_character":[...],
-
-    "new_scene":[...],
-
-    "new_event":[...],
-
-    "summary":"..."
-}
-技术
-
-Python
-
-建议：
-
-Instructor
-
-OpenAI SDK
-
-Pydantic Output Parser
-
-全部强制JSON输出。
-
-数据库存储
-
-SQLite
-
-例如：
-
-characters
-
-scenes
-
-events
-
-chapters
-
-relations
-验收
-
-例如：
-
-输入：
-
-100章小说
-
-输出：
-
-数据库：
-
-人物
-
-57个
-
-地点
-
-32个
-
-事件
-
-845个
-
-章节摘要
-
-100条
-
-抽查：
-
-随机检查：
-
-第58章
-
-人物是否正确
-
-地点是否正确
-
-摘要是否正确
-
-准确率达到90%以上。
-
-第三阶段：知识数据库（Knowledge Base）
-
-这里不再解析小说。
-
-而是建立整个世界。
-
-输出
-world.json
-
-characters.json
-
-timeline.json
-
-scene.json
-技术
-
-SQLite
-
-JSON Cache
-
-FAISS
-
-为什么需要FAISS？
-
-以后：
-
-例如：
-
-林凡第一次遇见小医仙？
-
-直接：
-
-Embedding
-
-↓
-
-检索
-
-↓
-
-找到章节
-
-不用LLM全局搜索。
-
-验收
-
-输入：
-
-林凡什么时候获得异火？
-
-系统：
-
-5秒内定位。
-
-第四阶段：资产生成（Assets）
-
-这里开始生成图片。
-
-人物Agent
-
-输入：
-
-Character001
-
-输出：
-
-标准立绘
-
-头像
-
-三视图
-
-各种表情
-
-各种动作
-场景Agent
-
-例如：
-
-青云宗
-
-输出：
-
-白天
-
-夜晚
-
-远景
-
-大厅
-
-山门
-技术
-
-ComfyUI API
-
-Flux
-
-ControlNet
-
-IPAdapter
-
-LoRA
-
-验收
-
-随机：
-
-20张图片。
-
-人物一致率：
-
-95%
-
-第五阶段：导演Agent（Director）
-
-输入：
-
-事件
-
-例如：
-
-林凡进入宗门
-
-输出：
-
-Episode001
-
-↓
-
-Shot001
-
-Shot002
-
-Shot003
-
-每个镜头：
-
-人物
-
-动作
-
-镜头
-
-情绪
-
-持续时间
-
-对白
-技术
-
-LLM
-
-JSON
-
-Story Planner
-
-验收
-
-人工检查：
-
-是否符合影视节奏。
-
-第六阶段：Prompt Builder
-
-输入：
-
-Shot001
-
-自动生成：
-
-Prompt
-
-Negative Prompt
-
-不用人工写。
-
-技术
-
-Jinja2 Template
-
-Prompt DSL
-
-验收
-
-100个镜头。
-
-全部生成Prompt。
-
-第七阶段：图片生成
-
-调用：
-
-ComfyUI
-
-输出：
-
-shot001.png
-技术
-
-Python
-
-WebSocket
-
-REST API
-
-ComfyUI
-
-验收
-
-100张图片：
-
-全部生成。
-
-失败率：
-
-<2%
-
-第八阶段：视频生成
-
-输入：
-
-shot001.png
-
-输出：
-
-shot001.mp4
-推荐模型
-
-Wan2.2 I2V（如果3090显存允许）
-
-或
-
-CogVideoX I2V
-
-> 注：此为该阶段早期方案，现已迁移至 MiniMax H3 FL2VA 本地引擎。
-
-验收
-
-连续：
-
-100个镜头。
-
-全部生成。
-
-第九阶段：自动剪辑
-
-Python：
-
-MoviePy
-
-FFmpeg
-
-生成：
-
-Episode001.mp4
-功能
-
-自动：
-
-字幕
-
-转场
-
-配乐
-
-片尾
-验收
-
-输出：
-
-完整视频。
-
-第十阶段：GUI
-
-推荐：
-
-PySide6
-
-不要Electron。
-
-原因：
-
-全部Python。
-
-调用方便。
-
-性能高。
-
-功能：
-
-项目管理
-
-小说导入
-
-解析进度
-
-人物浏览
-
-场景浏览
-
-镜头浏览
-
-开始生成
-
-继续生成
-
-导出视频
-每个阶段的验收标准（Definition of Done）
-阶段	输出	验收标准
-01 项目框架	可运行项目	能创建项目、初始化数据库
-02 小说编译	世界数据库	100章小说可解析，结构化数据准确率 ≥90%
-03 知识库	检索系统	人物、事件、地点可快速查询
-04 资产生成	人物/场景素材	人物一致性 ≥95%
-05 导演Agent	分集+分镜	每个事件生成合理镜头脚本
-06 Prompt Builder	Prompt	每个镜头自动生成完整Prompt
-07 图片生成	PNG	批量生成成功率 ≥98%
-08 视频生成	MP4	每个镜头成功生成视频
-09 自动剪辑	完整剧集	自动输出带字幕的剧集
-10 GUI	桌面软件	支持完整项目管理流程
-我建议采用"四层架构"
-
-不要把所有功能都放在一个 Agent 中，而是采用分层设计：
-
-┌─────────────────────────────┐
-│           GUI               │
-│       PySide6 Desktop       │
-└──────────────┬──────────────┘
-               │
-┌──────────────▼──────────────┐
-│         Pipeline Layer      │
-│  负责任务编排、状态管理、恢复 │
-└──────────────┬──────────────┘
-               │
-┌──────────────▼──────────────┐
-│         Agent Layer         │
-│ Novel │ Director │ Prompt   │
-│ Asset │ Render │ Composer   │
-└──────────────┬──────────────┘
-               │
-┌──────────────▼──────────────┐
-│       Data Layer            │
-│ SQLite + JSON + FAISS       │
-│ 世界状态、时间线、资产索引    │
-└─────────────────────────────┘
-
-如果这是一个长期项目，我建议不要急着编码。 下一步应该先完成 《系统架构设计（Architecture Design）》，然后依次编写：
-
-《01-项目规范.md》
-《02-数据库设计.md》
-《03-Agent设计.md》
-《04-小说编译器设计.md》
-《05-导演Agent设计.md》
-《06-ComfyUI工作流设计.md》
-《07-前后端通信设计.md》
-《08-开发路线图.md》
-
-这 8 份文档将作为整个项目的开发规范，后续所有 Python 代码都严格按照文档实现，这样项目规模扩展后仍然能够保持清晰、可维护。
+├── main.py                  # Typer CLI 入口（19 个命令）
+├── pyproject.toml           # 项目元数据、依赖、入口点、工具配置
+├── requirements.txt         # 运行依赖
+├── requirements.lock        # Windows / CPython 3.12 验证锁
+├── .env.example             # 配置模板（复制为 .env 使用）
+├── start_gui.bat            # Windows 一键启动桌面应用
+├── app/                     # 应用代码（见“系统架构”表格）
+│   ├── adapters/  agents/  compiler/  core/
+│   ├── database/  domain/  knowledge/ pipeline/
+│   ├── services/  ui/  validator/
+├── scripts/                 # 制作 / 批处理 / 一次性脚本
+│   ├── generate_episode_dubbing.py     # 整集配音 + 字幕 + 带声成片
+│   ├── generate_episode_lipsync.py     # 批量对口型（可续跑）
+│   ├── generate_episode_h3.py          # 整集 H3 生成（可续跑）
+│   ├── generate_storyboard_keyframes.py# 整集首帧关键帧
+│   ├── regenerate_episode_storyboard.py / regenerate_shot_keyframe.py
+│   ├── generate_high_quality_cast.py   # 真人选角（审核门禁式）
+│   ├── generate_high_quality_angles.py / generate_cast_turnarounds.py
+│   ├── approve_cast_angles.py          # 批准三视图并发布身份锚点
+│   ├── download_local_llm.ps1          # 下载本地 Qwen GGUF
+│   └── gpu/                            # 远端部署（cosyvoice / latentsync / minimax_h3 / minimax_h3_t8 / flux_kontext / ipadapter）
+├── workflows/               # ComfyUI 工作流脚本
+│   ├── krea/                # FLUX.1 Krea Dev 生图 / 修订（generate_samples / revise_image / generate_shots）
+│   ├── chinese_cast/        # Z-Image + Qwen 多角度选角
+│   ├── high_quality_image/  # 两阶段身份锁定关键帧
+│   └── minimax_h3/          # H3 FL2VA 视频任务（build_prompt 官方图 / build_t8_prompt T8 图，--engine 切换）
+├── docs/                    # 文档（见“文档索引”）
+├── tests/                   # 160 个 pytest 单元测试
+├── projects/                # （运行时）项目数据，不入库
+├── models/                  # （运行时）本地模型
+├── logs/                    # （运行时）日志
+└── 绝世丹神-校对版全本-作者-网络黑侠/  # 示例小说源数据（jueshi 项目，2550 章）
+```
+
+---
+
+## 数据与产物
+
+**数据库**(每个项目独立):`projects/<slug>/database/world.db`
+- SQLite(SQLAlchemy),WAL 模式,busy_timeout 可配置。
+- 22 张表覆盖全链路:章节、人物/场景/事件、实体与提及、叙事事件、对白、状态变化、
+  分析运行、任务、任务依赖、产物、审核、设置快照、源文档与编译章节。
+- 迁移前自动备份(`world.db.pre-schema-vN.bak`);当前 schema v2。
+
+**知识库导出**:`projects/<slug>/production/knowledge/`
+- `world.json`(世界观)、`characters.json`(人物档案)、`timeline.json`(事件时间线);
+  语义检索使用 FAISS 索引(不可用时回退全文检索)。
+
+**项目内关键目录**(以 `jueshi` 第 1 集为例):
+
+```text
+projects/jueshi/
+├── novel/                     # 源文档与标准章节
+├── assets/                    # characters / locations / voices 等资源包
+├── production/
+│   ├── episodes/              # 分镜脚本 episode_001.json
+│   ├── analysis/              # 章节分析 JSON
+│   ├── knowledge/             # 知识库导出
+│   ├── shots/                 # 分镜图片与生成记录
+│   ├── video_inputs/          # 视频任务首帧
+│   ├── videos/                # 单镜头视频与历史产物
+│   ├── audio/                 # 音频产物
+│   ├── cast/                  # 定妆 / 角度 / 身份锚点
+│   └── backups/               # 重新处理前的自动备份
+├── outputs/episodes/jueshi_001/   # 可交付成片包
+└── database/world.db          # SQLite 数据库
+```
+
+**日志**:`logs/app.log`(DEBUG,20 MB 轮转,保留 10 天)+ 控制台(INFO)。
+
+**任务系统**:长任务写入 `jobs` 表,带状态机、优先级、重试、心跳与依赖;`input_hash`
+实现结果复用与去重。
+
+---
+
+## 测试
+
+38 个本地 pytest 单元测试,覆盖导入、分析、分镜、连续性、生图工作流、配音、口型规划、
+任务系统、GUI(offscreen Qt)等模块。**无需 GPU、外部服务或真实 LLM**——远程调用均被
+模拟 / monkeypatch。
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q          # 运行全部测试
+.\.venv\Scripts\python.exe -m pytest -q -k voice  # 按关键字过滤
+```
+
+代码检查(dev 依赖):
+
+```powershell
+.\.venv\Scripts\python.exe -m ruff check .
+```
+
+> 注意:Windows 上运行测试请使用 `.venv` 解释器;涉及磁盘的测试请使用 pytest 的
+> `--basetemp` 指向临时目录,避免污染项目目录。
+
+---
+
+## 文档索引
+
+| 文档 | 说明 |
+|---|---|
+| [docs/00-项目启动说明.md](docs/00-项目启动说明.md) | **权威启动文档**:日常启动、首次安装、3090 连接、制作顺序、输出目录、故障排查 |
+| [docs/02-桌面应用使用指南.md](docs/02-桌面应用使用指南.md) | 桌面应用全页面操作手册 |
+| [docs/03-声音版权与授权说明.md](docs/03-声音版权与授权说明.md) | 声音克隆与授权合规说明 |
+| [docs/04-图片不满意时的修改功能.md](docs/04-图片不满意时的修改功能.md) | 图片修改 / 重生成的界面操作与写法建议 |
+| [docs/开发计划/README.md](docs/开发计划/README.md) | 开发计划总览(产品目标、架构、十阶段、里程碑) |
+| [docs/high_quality_personal_workflow.md](docs/high_quality_personal_workflow.md) | 个人高质量生产工作流(六阶段、审核门禁、当前模型) |
+| [HANDOFF.md](HANDOFF.md) | 交接文档(部分内容已过时,仅作工程史参考) |
+
+> `docs/01-启动指南.md` 与两份 `docs/工作记录_*.md` 明确标注为历史 / 时点快照,不应视为
+> 当前现状。
+
+---
+
+## 项目现状与已知限制
+
+**当前样例**:项目 `jueshi`(《绝世丹神》/《重生十万年》,2550 章)已全部导入 SQLite,
+第 1 集分镜与制作流程已打通;HANDOFF.md 记录的单章分析耗时(约 14 分钟)反映早期
+LLM 后端状态,可通过更换更快的 OpenAI 兼容后端 / 调整 `LLM_MAX_TOKENS` 优化。
+
+**已知限制**:
+- 文本分析依赖本地 LLM(默认 qwen3.5-9b 风格),抽取质量与模型能力相关;可用
+  `main.py validate` 抽查准确率。
+- 视频 / 配音 / 口型依赖远程 3090 与对应模型权重(约 42 GB H3 + 各辅助模型),首次部署
+  耗时较长;可用 `doctor` 与「连接与设置」逐步体检。
+- 人物一致性格外依赖身份指纹与参考帧机制,复杂场景仍需人工在 GUI 中审批候选。
+- 项目早期技术选型(Wan2.2 等)已迁移至 MiniMax H3 FL2VA;`workflows/wan22/` 仅余缓存。
+- H3 视频已迁移到 T8 音视频增强图(`h3_t8_native_v1`):联合 conditioning + 双钟采样器,
+  对白/音效由提示词直接合成;依赖 `comfyui-minimax-h3-audio-T8` 自定义节点,首次使用前
+  需在「连接与设置」安装/修复 T8 音频包。长视频多镜头连续(LongVideo 家族)与 OpenVDN
+  8 步加速为后续规划项,暂未接入。
+
+---
+
+*License / 版权提示:本系统仅用于生成本人、已获明确授权或原创合成的音色与内容。声音克隆
+请先阅读 [docs/03-声音版权与授权说明.md](docs/03-声音版权与授权说明.md)。*

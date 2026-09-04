@@ -1,8 +1,12 @@
 """Submit a MiniMax H3 FL2VA audio-video job to local ComfyUI.
 
 The desktop application uploads this self-contained script to the GPU server.
-It uses ComfyUI's official MiniMax H3 nodes and the pruned INT8/NVFP4 model
-combination intended for memory-constrained local inference.
+By default it builds the T8 graph (comfyui-minimax-h3-audio-T8): joint audio
+conditioning plus a dual-clock sampler that denoises video and audio latent on
+separate schedules, so the audio track is a first-class output. The stock
+official node graph stays available via ``--engine official`` for rollback.
+Both graphs use the pruned INT8/NVFP4 model combination intended for
+memory-constrained local inference.
 """
 
 from __future__ import annotations
@@ -21,6 +25,13 @@ H3_MODEL = "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
 H3_TEXT_ENCODER = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 H3_VIDEO_VAE = "minimax_h3_video_vae_fp16.safetensors"
 H3_AUDIO_VAE = "minimax_h3_audio_vae_fp32.safetensors"
+
+# T8 audio_mode values exposed by MiniMaxH3AudioConditioningT8. The app-level
+# NativeAudioMode (off/ambience_sfx_music/native_full) is mapped to one of these
+# before the prompt is submitted; "native" lets the model synthesize the audio
+# track from the prompt, which is what every app mode ultimately does here.
+T8_AUDIO_MODES = ("lock_source", "remix_source", "reference_only", "native")
+T8_DEFAULT_AUDIO_MODE = "native"
 
 
 def probe_video(
@@ -156,8 +167,40 @@ def build_prompt(
     fps: int,
     seed: int,
     filename_prefix: str,
+    engine: str = "official",
+    steps: int = 20,
+    sampler_name: str = "dual_clock_euler",
+    scheduler: str = "native_flow",
+    shift_video: float = 12.0,
+    shift_audio: float = 3.0,
+    audio_mode: str = T8_DEFAULT_AUDIO_MODE,
+    reference_audio_name: str = "",
 ) -> dict[str, dict]:
-    """Build the API-format equivalent of ComfyUI's official H3 I2V graph."""
+    """Dispatch to the official H3 node graph or the T8 enhanced graph.
+
+    ``engine="official"`` returns ComfyUI's stock MiniMaxH3ImageToVideo graph
+    (kept for rollback); ``engine="t8"`` returns the T8 graph built by
+    :func:`build_t8_prompt` — dual-clock sampling plus audio conditioning.
+    """
+    if engine == "t8":
+        return build_t8_prompt(
+            image_name=image_name,
+            end_image_name=end_image_name,
+            positive_prompt=positive_prompt,
+            width=width,
+            height=height,
+            frame_count=frame_count,
+            fps=fps,
+            seed=seed,
+            filename_prefix=filename_prefix,
+            steps=steps,
+            sampler_name=sampler_name,
+            scheduler=scheduler,
+            shift_video=shift_video,
+            shift_audio=shift_audio,
+            audio_mode=audio_mode,
+            reference_audio_name=reference_audio_name,
+        )
 
     h3_inputs: dict[str, object] = {
         "clip": ["2", 0],
@@ -271,6 +314,167 @@ def build_prompt(
     return prompt
 
 
+def build_t8_prompt(
+    *,
+    image_name: str,
+    end_image_name: str = "",
+    positive_prompt: str,
+    width: int,
+    height: int,
+    frame_count: int,
+    fps: int,
+    seed: int,
+    filename_prefix: str,
+    steps: int = 20,
+    sampler_name: str = "dual_clock_euler",
+    scheduler: str = "native_flow",
+    shift_video: float = 12.0,
+    shift_audio: float = 3.0,
+    audio_mode: str = T8_DEFAULT_AUDIO_MODE,
+    reference_audio_name: str = "",
+) -> dict[str, dict]:
+    """Build the T8 enhanced H3 graph for one shot.
+
+    Replaces the stock MiniMaxH3ImageToVideo + BasicScheduler/KSamplerSelect +
+    VAEDecode/VAEDecodeAudio chain with:
+      MiniMaxH3AudioConditioningT8  - joint audio+video conditioning
+      MiniMaxH3DualClockSamplerT8   - separate video/audio denoise schedules
+      MiniMaxH3AVDecodeT8           - decodes both AV latent branches at once
+    Native audio synthesis makes the audio track a first-class output instead of
+    a byproduct of the video schedule, which is what carries dialogue quality.
+    """
+    if audio_mode not in T8_AUDIO_MODES:
+        raise ValueError(
+            f"Invalid T8 audio_mode {audio_mode!r}; expected one of {T8_AUDIO_MODES}"
+        )
+
+    h3_inputs: dict[str, object] = {
+        "clip": ["2", 0],
+        "video_vae": ["3", 0],
+        "audio_vae": ["4", 0],
+        "prompt": positive_prompt,
+        "width": width,
+        "height": height,
+        "length": normalize_frame_count(frame_count),
+        "task_type": "FL2VA" if end_image_name else "I2VA",
+        "audio_mode": audio_mode,
+        "audio_denoise_strength": 0.35,
+        "add_source_as_reference": False,
+        "prompt_primary_audio_ordinal": 0,
+        "strict_prompt_tags": True,
+        "ref_image_size": "match",
+        "reference_video_policy": "official_2_to_15s",
+        "first_frame": ["5", 0],
+    }
+    if end_image_name:
+        h3_inputs["last_frame"] = ["6", 0]
+    if reference_audio_name:
+        h3_inputs["drive_audio"] = ["17", 0]
+
+    prompt: dict[str, dict] = {
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": {
+                "unet_name": H3_MODEL,
+                "weight_dtype": "default",
+            },
+        },
+        "2": {
+            "class_type": "CLIPLoader",
+            "inputs": {
+                "clip_name": H3_TEXT_ENCODER,
+                "type": "minimax",
+                "device": "default",
+            },
+        },
+        "3": {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": H3_VIDEO_VAE},
+        },
+        "4": {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": H3_AUDIO_VAE},
+        },
+        "5": {
+            "class_type": "LoadImage",
+            "inputs": {"image": image_name},
+        },
+        "7": {
+            "class_type": "MiniMaxH3AudioConditioningT8",
+            "inputs": h3_inputs,
+        },
+        "8": {
+            "class_type": "MiniMaxH3DualClockSamplerT8",
+            "inputs": {
+                "model": ["1", 0],
+                "av_latent": ["7", 1],
+                "steps": steps,
+                "shift_video": shift_video,
+                "shift_audio": shift_audio,
+                "sampler_name": sampler_name,
+                "scheduler": scheduler,
+            },
+        },
+        "9": {
+            "class_type": "BasicGuider",
+            "inputs": {
+                "model": ["8", 0],
+                "conditioning": ["7", 0],
+            },
+        },
+        "10": {
+            "class_type": "RandomNoise",
+            "inputs": {"noise_seed": seed},
+        },
+        "11": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["10", 0],
+                "guider": ["9", 0],
+                "sampler": ["8", 1],
+                "sigmas": ["8", 2],
+                "latent_image": ["7", 1],
+            },
+        },
+        "12": {
+            "class_type": "MiniMaxH3AVDecodeT8",
+            "inputs": {
+                "av_latent": ["11", 0],
+                "video_vae": ["3", 0],
+                "audio_vae": ["4", 0],
+            },
+        },
+        "14": {
+            "class_type": "CreateVideo",
+            "inputs": {
+                "images": ["12", 0],
+                "audio": ["12", 1],
+                "fps": fps,
+            },
+        },
+        "15": {
+            "class_type": "SaveVideo",
+            "inputs": {
+                "video": ["14", 0],
+                "filename_prefix": filename_prefix,
+                "format": "auto",
+                "codec": "auto",
+            },
+        },
+    }
+    if end_image_name:
+        prompt["6"] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": end_image_name},
+        }
+    if reference_audio_name:
+        prompt["17"] = {
+            "class_type": "LoadAudio",
+            "inputs": {"audio": reference_audio_name},
+        }
+    return prompt
+
+
 def request_json(
     base_url: str,
     path: str,
@@ -371,7 +575,14 @@ def run(args: argparse.Namespace) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     input_name = _copy_input(comfy_root, source)
     end_input_name = _copy_input(comfy_root, end_source) if end_source else ""
+    reference_audio_name = ""
+    if getattr(args, "reference_audio", ""):
+        reference_source = Path(args.reference_audio).resolve()
+        if not reference_source.is_file():
+            raise FileNotFoundError(f"参考音频不存在：{reference_source}")
+        reference_audio_name = _copy_input(comfy_root, reference_source)
 
+    engine = getattr(args, "engine", "t8")
     outputs: list[dict] = []
     started = time.monotonic()
     for index in range(args.candidate_count):
@@ -387,6 +598,14 @@ def run(args: argparse.Namespace) -> dict:
             fps=args.fps,
             seed=candidate_seed,
             filename_prefix=prefix,
+            engine=engine,
+            steps=getattr(args, "steps", 20),
+            sampler_name=getattr(args, "sampler_name", "dual_clock_euler"),
+            scheduler=getattr(args, "scheduler", "native_flow"),
+            shift_video=getattr(args, "shift_video", 12.0),
+            shift_audio=getattr(args, "shift_audio", 3.0),
+            audio_mode=getattr(args, "audio_mode", T8_DEFAULT_AUDIO_MODE),
+            reference_audio_name=reference_audio_name,
         )
         submitted_at = time.time()
         response = request_json(
@@ -448,18 +667,26 @@ def run(args: argparse.Namespace) -> dict:
     manifest = {
         "schema_version": "1.0",
         "engine_profile": "minimax_h3_fl2va",
+        "engine": engine,
         "model": H3_MODEL,
         "text_encoder": H3_TEXT_ENCODER,
         "video_vae": H3_VIDEO_VAE,
         "audio_vae": H3_AUDIO_VAE,
         "source_image": str(source),
         "end_image": str(end_source) if end_source else "",
+        "reference_audio": reference_audio_name,
         "width": args.width,
         "height": args.height,
         "frame_count": normalize_frame_count(args.frame_count),
         "fps": args.fps,
         "positive_prompt": positive_prompt,
         "native_audio": True,
+        "audio_mode": getattr(args, "audio_mode", T8_DEFAULT_AUDIO_MODE),
+        "steps": getattr(args, "steps", 20),
+        "sampler_name": getattr(args, "sampler_name", "dual_clock_euler"),
+        "scheduler": getattr(args, "scheduler", "native_flow"),
+        "shift_video": getattr(args, "shift_video", 12.0),
+        "shift_audio": getattr(args, "shift_audio", 3.0),
         "outputs": outputs,
         "elapsed_seconds": round(time.monotonic() - started, 3),
     }
@@ -488,6 +715,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=int, default=14400)
     parser.add_argument("--comfy-url", default="http://127.0.0.1:8188")
     parser.add_argument("--comfy-root", default="/root/autodl-tmp/ComfyUI")
+    parser.add_argument("--engine", default="t8", choices=("official", "t8"))
+    parser.add_argument("--steps", type=int, default=20)
+    parser.add_argument("--sampler-name", default="dual_clock_euler")
+    parser.add_argument("--scheduler", default="native_flow")
+    parser.add_argument("--shift-video", type=float, default=12.0)
+    parser.add_argument("--shift-audio", type=float, default=3.0)
+    parser.add_argument(
+        "--audio-mode", default=T8_DEFAULT_AUDIO_MODE, choices=T8_AUDIO_MODES
+    )
+    parser.add_argument("--reference-audio", default="")
     return parser.parse_args()
 
 

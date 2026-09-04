@@ -2343,6 +2343,7 @@ class SettingsPage(QWidget):
     check_latentsync_requested = Signal()
     deploy_latentsync_requested = Signal()
     deploy_h3_requested = Signal()
+    deploy_t8_requested = Signal()
     deploy_kontext_requested = Signal()
     check_local_models_requested = Signal()
 
@@ -2449,6 +2450,16 @@ class SettingsPage(QWidget):
         h3_actions.addWidget(self.h3_status)
         h3_actions.addStretch()
         form.addLayout(h3_actions, 9, 1)
+        t8_actions = QHBoxLayout()
+        self.t8_deploy = QPushButton("安装/修复 T8 音频增强包（纯代码）")
+        self.t8_deploy.setObjectName("secondaryButton")
+        self.t8_deploy.clicked.connect(self.deploy_t8_requested.emit)
+        self.t8_status = QLabel("T8 音频增强节点尚未检测")
+        self.t8_status.setObjectName("pillOff")
+        t8_actions.addWidget(self.t8_deploy)
+        t8_actions.addWidget(self.t8_status)
+        t8_actions.addStretch()
+        form.addLayout(t8_actions, 10, 1)
         kontext_actions = QHBoxLayout()
         self.kontext_deploy = QPushButton("安装/修复 FLUX.1 Kontext（约 11.9GB）")
         self.kontext_deploy.setObjectName("primaryButton")
@@ -2458,7 +2469,7 @@ class SettingsPage(QWidget):
         kontext_actions.addWidget(self.kontext_deploy)
         kontext_actions.addWidget(self.kontext_status)
         kontext_actions.addStretch()
-        form.addLayout(kontext_actions, 11, 1)
+        form.addLayout(kontext_actions, 12, 1)
         layout.addWidget(card)
 
         llm_card = QFrame()
@@ -2581,6 +2592,12 @@ class SettingsPage(QWidget):
             "正在安装 H3…" if busy else "安装/修复 MiniMax H3（约 40GiB）"
         )
 
+    def set_t8_busy(self, busy: bool) -> None:
+        self.t8_deploy.setDisabled(busy)
+        self.t8_deploy.setText(
+            "正在安装 T8…" if busy else "安装/修复 T8 音频增强包（纯代码）"
+        )
+
     def set_kontext_busy(self, busy: bool) -> None:
         self.kontext_deploy.setDisabled(busy)
         self.kontext_deploy.setText(
@@ -2669,6 +2686,16 @@ class SettingsPage(QWidget):
         self.h3_status.setObjectName(h3_name)
         self.h3_status.style().unpolish(self.h3_status)
         self.h3_status.style().polish(self.h3_status)
+        if status.t8_runtime_ready:
+            t8_text, t8_name = "T8 音频增强已就绪 · 对白/参考音频", "pillGood"
+        elif status.h3_runtime_ready:
+            t8_text, t8_name = "T8 音频增强未安装", "pillWarn"
+        else:
+            t8_text, t8_name = "T8 音频增强尚未检测", "pillOff"
+        self.t8_status.setText(t8_text)
+        self.t8_status.setObjectName(t8_name)
+        self.t8_status.style().unpolish(self.t8_status)
+        self.t8_status.style().polish(self.t8_status)
         if status.kontext_runtime_ready:
             kontext_text, kontext_name = (
                 "FLUX.1 Kontext 已就绪 · 一致性动作尾帧",
@@ -2940,6 +2967,7 @@ class MainWindow(QMainWindow):
             self.deploy_latentsync
         )
         self.settings_page.deploy_h3_requested.connect(self.deploy_minimax_h3)
+        self.settings_page.deploy_t8_requested.connect(self.deploy_minimax_h3_t8)
         self.settings_page.deploy_kontext_requested.connect(
             self.deploy_flux_kontext
         )
@@ -3576,6 +3604,30 @@ class MainWindow(QMainWindow):
         )
         self._start_progress_task(
             lambda report: self.gpu_service.install_minimax_h3(
+                config,
+                progress_callback=report,
+            ),
+            self._on_gpu_status,
+            self._on_gpu_error,
+            self.video_generation.set_progress,
+        )
+
+    def deploy_minimax_h3_t8(self) -> None:
+        config = self.settings_page.connection()
+        if not config.password:
+            self.show_error(
+                "缺少 GPU 密码",
+                "请先在“连接与设置”填写 SSH 密码。",
+            )
+            return
+        self._save_connection(config)
+        self.settings_page.set_t8_busy(True)
+        self.set_activity("T8 音频增强包部署中", "warn")
+        self.append_log(
+            "正在部署 MiniMax H3 Audio T8 音频增强包（离线 tar.gz，无额外依赖）"
+        )
+        self._start_progress_task(
+            lambda report: self.gpu_service.install_minimax_h3_t8(
                 config,
                 progress_callback=report,
             ),
@@ -5890,6 +5942,7 @@ class MainWindow(QMainWindow):
         self.last_gpu_status = status
         self.settings_page.set_busy(False)
         self.settings_page.set_h3_busy(False)
+        self.settings_page.set_t8_busy(False)
         self.settings_page.set_kontext_busy(False)
         self.settings_page.set_status(status)
         self.overview.set_gpu_status(status)
@@ -5959,6 +6012,7 @@ class MainWindow(QMainWindow):
     def _on_gpu_error(self, detail: str) -> None:
         self.settings_page.set_busy(False)
         self.settings_page.set_h3_busy(False)
+        self.settings_page.set_t8_busy(False)
         self.settings_page.set_kontext_busy(False)
         self.set_activity("操作失败", "off")
         first_line = detail.splitlines()[0] if detail else "未知错误"

@@ -20,3 +20,6 @@ chapters_backup/
 .env.*
 !.env.example
 ssh.txt
+
+# Claude Code 会话产物（调试脚本、pytest 缓存等）
+.claude/

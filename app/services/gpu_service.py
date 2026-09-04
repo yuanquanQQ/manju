@@ -39,6 +39,18 @@ from app.services.video_service import (
 )
 
 
+# MiniMax H3 workflow engine. The T8 node graph (comfyui-minimax-h3-audio-T8)
+# is the production engine: joint audio conditioning + dual-clock sampling.
+# The stock official graph stays available for rollback through the
+# generate_video.py --engine flag, but the desktop path always drives T8.
+H3_WORKFLOW_ENGINE = "t8"
+H3_T8_SAMPLER_NAME = "dual_clock_euler"
+H3_T8_SCHEDULER = "native_flow"
+H3_T8_SHIFT_VIDEO = 12.0
+H3_T8_SHIFT_AUDIO = 3.0
+H3_GENERATION_REVISION = "h3_t8_native_v1"
+
+
 @dataclass(slots=True)
 class GpuConnection:
     host: str = "connect.nmb2.seetacloud.com"
@@ -65,6 +77,7 @@ class GpuStatus:
     h3_model_ready: bool = False
     h3_runtime_ready: bool = False
     h3_model_name: str = ""
+    t8_runtime_ready: bool = False
     message: str = ""
 
 
@@ -173,6 +186,7 @@ then h3_ready=1; else h3_ready=0; fi
 h3_nodes_ready=0
 kontext_nodes_ready=0
 identity_ready=0
+t8_nodes_ready=0
 if [ "$comfy" = 1 ]; then
   object_info=$(curl -fsS --max-time 8 http://127.0.0.1:8188/object_info 2>/dev/null || true)
   if printf '%s' "$object_info" | grep -q '"MiniMaxH3ImageToVideo"' &&
@@ -186,11 +200,16 @@ if [ "$comfy" = 1 ]; then
      [ -f "$models/ipadapter/ip-adapter-plus-face_sdxl_vit-h.safetensors" ] &&
      printf '%s' "$object_info" | grep -q '"IPAdapterUnifiedLoader"' &&
      printf '%s' "$object_info" | grep -q '"IPAdapter"'; then identity_ready=1; fi
+  if printf '%s' "$object_info" | grep -q '"MiniMaxH3AudioConditioningT8"' &&
+     printf '%s' "$object_info" | grep -q '"MiniMaxH3DualClockSamplerT8"' &&
+     printf '%s' "$object_info" | grep -q '"MiniMaxH3AVDecodeT8"' &&
+     printf '%s' "$object_info" | grep -q '"MiniMaxH3AudioMixT8"' &&
+     printf '%s' "$object_info" | grep -q '"MiniMaxH3OutputTrimT8"'; then t8_nodes_ready=1; fi
 fi
-printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
   "$gpu" "$disk" "$comfy" "$krea" "$available" "$identity_ready" "$h3_ready" \
   "$h3_nodes_ready" "$(basename "$h3_model" 2>/dev/null)" "$kontext_ready" \
-  "$kontext_nodes_ready" "$(basename "$kontext_model" 2>/dev/null)"
+  "$kontext_nodes_ready" "$(basename "$kontext_model" 2>/dev/null)" "$t8_nodes_ready"
 """
         try:
             output = self._exec(client, command, timeout=20).splitlines()
@@ -215,6 +234,9 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                 status.kontext_model_ready and len(output) > 10 and output[10] == "1"
             )
             status.kontext_model_name = output[11] if len(output) > 11 else ""
+            status.t8_runtime_ready = (
+                status.h3_runtime_ready and len(output) > 12 and output[12] == "1"
+            )
             status.message = "服务器连接正常"
         finally:
             client.close()
@@ -358,6 +380,75 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
         if not status.h3_runtime_ready:
             raise RuntimeError("H3 模型已安装，但 ComfyUI 原生 H3 音视频节点检测未通过")
         report(100, "MiniMax H3 FL2VA 已安装并可调用")
+        return status
+
+    def install_minimax_h3_t8(
+        self,
+        config: GpuConnection,
+        *,
+        progress_callback: Callable[[int, str], None] | None = None,
+    ) -> GpuStatus:
+        """Install the MiniMax H3 Audio T8 custom-node bundle (offline tar.gz)."""
+
+        script_root = settings.project_root / "scripts" / "gpu" / "minimax_h3_t8"
+        script = script_root / "install.sh"
+        archive = script_root / "comfyui-minimax-h3-audio-T8-main.tar.gz"
+        missing = [
+            str(path)
+            for path in (script, archive)
+            if not path.is_file()
+        ]
+        if missing:
+            raise FileNotFoundError(f"T8 部署文件缺失：{'、'.join(missing)}")
+
+        def report(percent: int, message: str) -> None:
+            if progress_callback:
+                progress_callback(max(0, min(percent, 100)), message)
+
+        report(2, "正在连接 GPU 服务器")
+        client = self._connect(config)
+        remote_dir = f"{self.remote_project_root}/scripts/gpu/minimax_h3_t8"
+        remote_script = f"{remote_dir}/install.sh"
+        remote_archive = f"{remote_dir}/{archive.name}"
+        try:
+            self._exec(client, f"mkdir -p {shlex.quote(remote_dir)}", timeout=15)
+            sftp = client.open_sftp()
+            try:
+                sftp.put(str(script), remote_script)
+                sftp.put(str(archive), remote_archive)
+            finally:
+                sftp.close()
+            self._exec(
+                client,
+                f"chmod +x {shlex.quote(remote_script)}",
+                timeout=15,
+            )
+
+            def on_output(line: str) -> None:
+                if "t8_ready" in line:
+                    report(90, "T8 音频增强包已写入 custom_nodes")
+
+            report(5, "正在解压 T8 音频增强包（纯代码，无额外依赖）")
+            self._exec_streaming(
+                client,
+                (
+                    "env T8_ARCHIVE=" + shlex.quote(remote_archive)
+                    + " " + shlex.quote(remote_script)
+                ),
+                timeout=600,
+                output_callback=on_output,
+            )
+        finally:
+            client.close()
+
+        report(92, "正在重启 ComfyUI 并验证 T8 节点")
+        status = self.start_comfy(config)
+        if not status.t8_runtime_ready:
+            raise RuntimeError(
+                "T8 包已部署，但 ComfyUI 的五个核心 T8 音视频节点检测未通过；"
+                "请确认远端 ComfyUI 已升级到支持 H3 原生协议的最新版。"
+            )
+        report(100, "MiniMax H3 Audio T8 已安装并可调用")
         return status
 
     def install_flux_kontext(
@@ -1101,7 +1192,8 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
             client = self._connect(config)
             self._ensure_remote_comfy(client)
             self._ensure_remote_h3(client)
-            report(5, "MiniMax H3 FL2VA 与原生音视频节点已就绪")
+            self._ensure_remote_t8(client)
+            report(5, "MiniMax H3 FL2VA 与 T8 音视频节点已就绪")
 
             run_name = f"{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:6]}"
             remote_workflow_dir = f"{self.remote_project_root}/workflows/minimax_h3"
@@ -1144,6 +1236,16 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                 )
                 remote_output_dir = f"{remote_output_root}/shot_{spec.shot_number:03d}"
                 remote_prompt = f"{remote_input_dir}/shot_{spec.shot_number:03d}_prompt.txt"
+                remote_reference_audio = ""
+                reference_audio_source: Path | None = None
+                if spec.reference_audio:
+                    reference_audio_source = self._project_file(
+                        root, spec.reference_audio, "参考音频"
+                    )
+                    remote_reference_audio = (
+                        f"{remote_input_dir}/shot_{spec.shot_number:03d}_ref"
+                        f"{reference_audio_source.suffix.lower()}"
+                    )
                 self._exec(
                     client,
                     f"mkdir -p {shlex.quote(remote_output_dir)}",
@@ -1154,6 +1256,8 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                     sftp.put(str(source), remote_source)
                     if end_source:
                         sftp.put(str(end_source), remote_end)
+                    if reference_audio_source:
+                        sftp.put(str(reference_audio_source), remote_reference_audio)
                     with sftp.file(remote_prompt, "wb") as prompt_file:
                         prompt_file.write(self._h3_positive_prompt(spec).encode("utf-8"))
                 finally:
@@ -1169,6 +1273,10 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                 ]
                 if remote_end:
                     command_parts.extend(["--end-image", shlex.quote(remote_end)])
+                if remote_reference_audio:
+                    command_parts.extend(
+                        ["--reference-audio", shlex.quote(remote_reference_audio)]
+                    )
                 command_parts.extend(
                     [
                         "--output-dir",
@@ -1189,6 +1297,20 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                         str(seed),
                         "--candidate-count",
                         str(spec.candidate_count),
+                        "--engine",
+                        H3_WORKFLOW_ENGINE,
+                        "--steps",
+                        str(spec.steps or 20),
+                        "--sampler-name",
+                        H3_T8_SAMPLER_NAME,
+                        "--scheduler",
+                        H3_T8_SCHEDULER,
+                        "--shift-video",
+                        str(H3_T8_SHIFT_VIDEO),
+                        "--shift-audio",
+                        str(H3_T8_SHIFT_AUDIO),
+                        "--audio-mode",
+                        GpuServerService._h3_t8_audio_mode(spec),
                     ]
                 )
 
@@ -1325,7 +1447,15 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                             {
                                 "model_name": remote_manifest.get("model"),
                                 "text_encoder": remote_manifest.get("text_encoder"),
-                                "generation_revision": "h3_native_v2_identity_dialogue_transition",
+                                "generation_revision": H3_GENERATION_REVISION,
+                                "workflow_engine": remote_manifest.get("engine"),
+                                "audio_mode": remote_manifest.get("audio_mode"),
+                                "reference_audio": remote_manifest.get("reference_audio"),
+                                "steps": remote_manifest.get("steps"),
+                                "sampler_name": remote_manifest.get("sampler_name"),
+                                "scheduler": remote_manifest.get("scheduler"),
+                                "shift_video": remote_manifest.get("shift_video"),
+                                "shift_audio": remote_manifest.get("shift_audio"),
                                 "video_vae": remote_manifest.get("video_vae"),
                                 "audio_vae": remote_manifest.get("audio_vae"),
                                 "candidate_index": candidate_index,
@@ -1417,6 +1547,23 @@ printf '%s' "$object_info" | grep -q '"SaveVideo"'
                 "请先更新 ComfyUI，并安装 H3 模型、文本编码器和两个 VAE。"
             ) from exc
 
+    def _ensure_remote_t8(self, client: paramiko.SSHClient) -> None:
+        command = r"""
+object_info=$(curl -fsS --max-time 10 http://127.0.0.1:8188/object_info)
+printf '%s' "$object_info" | grep -q '"MiniMaxH3AudioConditioningT8"'
+printf '%s' "$object_info" | grep -q '"MiniMaxH3DualClockSamplerT8"'
+printf '%s' "$object_info" | grep -q '"MiniMaxH3AVDecodeT8"'
+printf '%s' "$object_info" | grep -q '"MiniMaxH3AudioMixT8"'
+printf '%s' "$object_info" | grep -q '"MiniMaxH3OutputTrimT8"'
+"""
+        try:
+            self._exec(client, command, timeout=30)
+        except Exception as exc:
+            raise RuntimeError(
+                "MiniMax H3 Audio T8 音视频增强节点不完整；"
+                "请先在“连接与设置”安装/修复 T8 音频增强包。"
+            ) from exc
+
     def _ensure_remote_kontext(self, client: paramiko.SSHClient) -> None:
         command = r"""
 models=/root/autodl-tmp/ComfyUI/models
@@ -1435,6 +1582,20 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
             raise RuntimeError(
                 "FLUX.1 Kontext 模型或 ComfyUI 编辑节点不完整；请先在连接设置中安装/修复 Kontext。"
             ) from exc
+
+    @staticmethod
+    def _h3_t8_audio_mode(spec: VideoRenderSpec) -> str:
+        """Map the app-level audio mode to the T8 conditioning audio_mode.
+
+        Every app mode (off / ambience_sfx_music / native_full) synthesizes the
+        audio track from the prompt inside T8's ``native`` mode; the differences
+        live in the prompt text already produced by :meth:`_h3_positive_prompt`.
+        A non-empty :attr:`VideoRenderSpec.audio_mode_override` passes straight
+        through so power users can select lock_source / remix_source /
+        reference_only directly.
+        """
+        override = (spec.audio_mode_override or "").strip()
+        return override if override else "native"
 
     @staticmethod
     def _h3_positive_prompt(spec: VideoRenderSpec) -> str:
