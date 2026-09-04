@@ -210,7 +210,7 @@ def build_sdxl_workflow(
         }
         workflow["9"] = {
             "inputs": {
-                "ipadapter_file": "sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors",
+                "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors",
             },
             "class_type": "IPAdapterModelLoader",
             "_meta": {"title": "加载 IPAdapter 模型"},

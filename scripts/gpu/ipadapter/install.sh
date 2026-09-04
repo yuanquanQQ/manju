@@ -9,7 +9,7 @@ adapter_dir="$comfy_root/models/ipadapter"
 clip_file="$clip_dir/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
 adapter_file="$adapter_dir/ip-adapter-plus-face_sdxl_vit-h.safetensors"
 
-mkdir -p "$clip_dir" "$adapter_dir"
+mkdir -p "$clip_dir" "$adapter_dir" "$comfy_root/custom_nodes"
 
 download() {
   local repo_path="$1"
@@ -35,4 +35,40 @@ printf '%s  %s\n' \
   "677ad8860204f7d0bfba12d29e6c31ded9beefdf3e4bbd102518357d31a292c1" \
   "$adapter_file" | sha256sum -c -
 
-echo "SDXL IP-Adapter Plus Face identity models are ready"
+# Install the ComfyUI_IPAdapter_plus custom node so the IPAdapterUnifiedLoader /
+# IPAdapter nodes exist. Without these nodes check_status reports
+# identity_adapter_ready=False even after the weights land. The package is pure
+# Python with no hard pip dependencies. Mirror the official-fetch pattern from
+# update_comfyui.sh: bypass the server's global GitHub rewrite via an empty
+# global git config so the read-only clone hits github.com directly.
+node_dir="$comfy_root/custom_nodes/ComfyUI_IPAdapter_plus"
+if [ ! -d "$node_dir/.git" ]; then
+  rm -rf "$node_dir"
+  cloned=0
+  for attempt in 1 2 3; do
+    if GIT_CONFIG_GLOBAL=/dev/null git -c http.version=HTTP/1.1 clone \
+      --depth 1 https://github.com/cubiq/ComfyUI_IPAdapter_plus.git "$node_dir"; then
+      cloned=1
+      break
+    fi
+    echo "ComfyUI_IPAdapter_plus clone attempt $attempt failed; retrying..." >&2
+    sleep $((attempt * 3))
+  done
+  if [ "$cloned" != 1 ]; then
+    echo "Failed to clone ComfyUI_IPAdapter_plus; the weights are installed" >&2
+    echo "but the nodes are missing — install the node manually." >&2
+    exit 3
+  fi
+else
+  echo "ComfyUI_IPAdapter_plus already present, skipping clone"
+fi
+
+for node in IPAdapterUnifiedLoader IPAdapter; do
+  if ! grep -rq "$node" "$node_dir" --include='*.py'; then
+    echo "IPAdapter node not found after clone: $node" >&2
+    exit 4
+  fi
+done
+
+echo "SDXL IP-Adapter Plus Face identity models and nodes are ready"
+
