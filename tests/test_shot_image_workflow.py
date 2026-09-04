@@ -397,12 +397,20 @@ def test_flux_cast_reference_is_only_img2img_for_single_person_coverage() -> Non
     ) == "prompt_only"
 
 
-def test_sdxl_cast_reference_uses_identity_adapter_when_gender_safe() -> None:
+def test_sdxl_cast_reference_uses_identity_adapter_for_any_gender() -> None:
     assert _cast_reference_strategy(
         reference_mode="cast_selection",
         reference_image="cast/heroine.png",
         architecture="sdxl",
         prompt="unmistakably female young woman in white robes",
+    ) == "identity_adapter"
+    # Male cast portraits now also use IP-Adapter Plus Face — gender is no
+    # longer a reason to fall back to img2img / prompt_only.
+    assert _cast_reference_strategy(
+        reference_mode="cast_selection",
+        reference_image="cast/qin_feng.png",
+        architecture="sdxl",
+        prompt="unmistakably male young man, = MALE young man, strict single-person",
     ) == "identity_adapter"
     assert _cast_reference_strategy(
         reference_mode="none",

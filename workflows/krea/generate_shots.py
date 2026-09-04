@@ -453,13 +453,12 @@ def _cast_reference_strategy(
 
     if not reference_image or reference_mode != "cast_selection":
         return "none"
-    lowered = prompt.lower()
-    if (
-        architecture == "sdxl"
-        and "unmistakably male" not in lowered
-        and "= male young man" not in lowered
-    ):
+    # IP-Adapter Plus Face works for any gender — it is a face-identity
+    # reference, not a gender-specific model. Both male and female cast
+    # portraits route through identity_adapter on SDXL.
+    if architecture == "sdxl":
         return "identity_adapter"
+    lowered = prompt.lower()
     if "strict single-person" in lowered:
         return "img2img"
     return "prompt_only"
