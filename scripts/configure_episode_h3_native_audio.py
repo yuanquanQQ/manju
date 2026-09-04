@@ -31,7 +31,9 @@ def run(project: str, episode_number: int, workspace: Path) -> Path:
         video = shot.setdefault("video_generation", {})
         video["engine_profile"] = "minimax_h3_fl2va"
         video["native_audio_mode"] = "native_full"
-        video["dialogue_prompt"] = _native_dialogue_prompt(shot)
+        # Persist only the literal line plus speaker metadata.  The H3 prompt
+        # builder adds engine instructions later; never store those as speech.
+        video["dialogue_prompt"] = _native_dialogue_prompt(shot, compact=True)
         video["candidate_count"] = max(2, int(video.get("candidate_count") or 0))
         video["selected_video"] = ""
         video["manifest_file"] = ""

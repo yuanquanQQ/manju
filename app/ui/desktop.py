@@ -2343,7 +2343,6 @@ class SettingsPage(QWidget):
     check_latentsync_requested = Signal()
     deploy_latentsync_requested = Signal()
     deploy_h3_requested = Signal()
-    deploy_flf_requested = Signal()
     deploy_kontext_requested = Signal()
     check_local_models_requested = Signal()
 
@@ -2450,16 +2449,6 @@ class SettingsPage(QWidget):
         h3_actions.addWidget(self.h3_status)
         h3_actions.addStretch()
         form.addLayout(h3_actions, 9, 1)
-        flf_actions = QHBoxLayout()
-        self.flf_deploy = QPushButton("安装/修复 Wan FLF2V（约 28.9GB）")
-        self.flf_deploy.setObjectName("primaryButton")
-        self.flf_deploy.clicked.connect(self.deploy_flf_requested.emit)
-        self.flf_status = QLabel("FLF2V 首尾帧模型尚未检测")
-        self.flf_status.setObjectName("pillOff")
-        flf_actions.addWidget(self.flf_deploy)
-        flf_actions.addWidget(self.flf_status)
-        flf_actions.addStretch()
-        form.addLayout(flf_actions, 10, 1)
         kontext_actions = QHBoxLayout()
         self.kontext_deploy = QPushButton("安装/修复 FLUX.1 Kontext（约 11.9GB）")
         self.kontext_deploy.setObjectName("primaryButton")
@@ -2592,14 +2581,6 @@ class SettingsPage(QWidget):
             "正在安装 H3…" if busy else "安装/修复 MiniMax H3（约 40GiB）"
         )
 
-    def set_flf_busy(self, busy: bool) -> None:
-        self.flf_deploy.setDisabled(busy)
-        self.flf_deploy.setText(
-            "正在安装 FLF2V…"
-            if busy
-            else "安装/修复 Wan FLF2V（约 28.9GB）"
-        )
-
     def set_kontext_busy(self, busy: bool) -> None:
         self.kontext_deploy.setDisabled(busy)
         self.kontext_deploy.setText(
@@ -2688,16 +2669,6 @@ class SettingsPage(QWidget):
         self.h3_status.setObjectName(h3_name)
         self.h3_status.style().unpolish(self.h3_status)
         self.h3_status.style().polish(self.h3_status)
-        if status.flf_runtime_ready:
-            flf_text, flf_name = "Wan FLF2V 14B 已就绪 · 首尾帧动作控制", "pillGood"
-        elif status.flf_model_ready:
-            flf_text, flf_name = "FLF2V 文件已安装 · ComfyUI 节点未就绪", "pillWarn"
-        else:
-            flf_text, flf_name = "FLF2V 尚未安装", "pillOff"
-        self.flf_status.setText(flf_text)
-        self.flf_status.setObjectName(flf_name)
-        self.flf_status.style().unpolish(self.flf_status)
-        self.flf_status.style().polish(self.flf_status)
         if status.kontext_runtime_ready:
             kontext_text, kontext_name = (
                 "FLUX.1 Kontext 已就绪 · 一致性动作尾帧",
@@ -2938,9 +2909,6 @@ class MainWindow(QMainWindow):
             self.select_shot_image_candidate
         )
         self.video_generation.generate_requested.connect(self.generate_shot_videos)
-        self.video_generation.end_frames_requested.connect(
-            self.generate_end_frames_then_videos
-        )
         self.video_generation.source_requested.connect(self.set_shot_source_image)
         self.video_generation.end_source_requested.connect(self.set_shot_end_image)
         self.video_generation.save_settings_requested.connect(
@@ -2972,7 +2940,6 @@ class MainWindow(QMainWindow):
             self.deploy_latentsync
         )
         self.settings_page.deploy_h3_requested.connect(self.deploy_minimax_h3)
-        self.settings_page.deploy_flf_requested.connect(self.deploy_wan22_flf2v)
         self.settings_page.deploy_kontext_requested.connect(
             self.deploy_flux_kontext
         )
@@ -3609,31 +3576,6 @@ class MainWindow(QMainWindow):
         )
         self._start_progress_task(
             lambda report: self.gpu_service.install_minimax_h3(
-                config,
-                progress_callback=report,
-            ),
-            self._on_gpu_status,
-            self._on_gpu_error,
-            self.video_generation.set_progress,
-        )
-
-    def deploy_wan22_flf2v(self) -> None:
-        config = self.settings_page.connection()
-        if not config.password:
-            self.show_error(
-                "缺少 GPU 密码",
-                "请先在“连接与设置”填写 SSH 密码。",
-            )
-            return
-        self._save_connection(config)
-        self.settings_page.set_flf_busy(True)
-        self.set_activity("Wan FLF2V 部署中", "warn")
-        self.append_log(
-            "正在通过 HF 镜像断点续传 Wan2.2 FLF2V 14B，约 28.9GB；"
-            "保留 H3，不删除不确定模型"
-        )
-        self._start_progress_task(
-            lambda report: self.gpu_service.install_wan22_flf2v(
                 config,
                 progress_callback=report,
             ),
@@ -4443,195 +4385,6 @@ class MainWindow(QMainWindow):
         )
         self.refresh_project()
 
-    def generate_end_frames_then_videos(
-        self,
-        episode_number: int,
-        payloads: list[dict[str, Any]],
-        width: int,
-        height: int,
-        fps: int,
-    ) -> None:
-        """Generate missing FLF end keyframes, bind them, then continue video."""
-
-        if not self.current_project or not self.current_snapshot:
-            return
-        project_slug = self.current_project
-        project_root = self.current_snapshot.root
-        missing = [
-            int(payload["shot_number"])
-            for payload in payloads
-            if not payload.get("end_image")
-        ]
-        if not missing:
-            self.generate_shot_videos(
-                episode_number,
-                payloads,
-                width,
-                height,
-                fps,
-            )
-            return
-        config = self.settings_page.connection()
-        self._save_connection(config)
-        if not config.password:
-            self.show_error(
-                "缺少 GPU 密码",
-                "请先在“连接设置”填写 SSH 密码并检测服务器。",
-            )
-            return
-        episode_path = self.project_service.episode_path(
-            project_slug,
-            episode_number,
-        )
-        run_stamp = f"{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:6]}"
-        output_dir = (
-            project_root
-            / "production"
-            / "shots"
-            / f"episode_{episode_number:03d}"
-            / "generated_end_frames"
-            / run_stamp
-        )
-        self.video_generation.set_generating(
-            True,
-            f"正在自动生成 {len(missing)} 个动作结束关键帧",
-        )
-        self.append_log(
-            "FLF2V 自动准备结束帧："
-            + "、".join(f"{number:02d}" for number in missing)
-        )
-
-        def task(report):
-            self._release_cosyvoice_for_gpu(config, report)
-            status = self.gpu_service.start_comfy(config)
-            if not status.ssh_online:
-                raise RuntimeError(status.message or "GPU 服务器未连接")
-            if not status.available_model_ids:
-                raise RuntimeError("GPU 服务器没有可用的生图模型")
-            model_id = (
-                DEFAULT_IMAGE_MODEL_ID
-                if DEFAULT_IMAGE_MODEL_ID in status.available_model_ids
-                else status.available_model_ids[0]
-            )
-            result = self.gpu_service.generate_shot_images(
-                config,
-                project_slug=project_slug,
-                episode_path=episode_path,
-                shot_numbers=missing,
-                model_ids=[model_id],
-                local_output_dir=output_dir,
-                candidate_count=2,
-                width=width,
-                height=height,
-                style_prompt=style_prompt(DEFAULT_STYLE),
-                frame_role="end",
-                progress_callback=report,
-            )
-            return result
-
-        def success(result: GenerationResult) -> None:
-            records = result.manifest.get("images") or []
-            candidates_by_shot: dict[int, list[Path]] = {}
-            model_by_candidate: dict[Path, str] = {}
-            for record in records:
-                if not isinstance(record, dict):
-                    continue
-                number = int(record.get("shot_number") or 0)
-                candidate = result.local_dir / str(record.get("file") or "")
-                if number in missing and candidate.is_file():
-                    candidates_by_shot.setdefault(number, []).append(candidate)
-                    model_by_candidate[candidate] = str(
-                        record.get("model_id") or ""
-                    )
-            payload_by_shot = {
-                int(payload["shot_number"]): payload for payload in payloads
-            }
-            selected_by_shot: dict[int, Path] = {}
-            rejected_scores: dict[int, list[str]] = {}
-            for number, candidates in candidates_by_shot.items():
-                start = Path(payload_by_shot[number]["source_image"])
-                scored = [
-                    (
-                        self.video_service.keyframe_continuity_score(start, path),
-                        self.video_service.keyframe_layout_score(start, path),
-                        path,
-                    )
-                    for path in candidates
-                ]
-                valid = [
-                    item
-                    for item in scored
-                    if (
-                        0.48 <= item[1] <= 0.94
-                        and 0.18 <= item[0] <= 0.85
-                        if model_by_candidate.get(item[2]) == "flux_kontext"
-                        else 0.62 <= item[0] <= 0.985
-                    )
-                ]
-                if valid:
-                    selected_by_shot[number] = min(
-                        valid,
-                        key=lambda item: (
-                            -item[1]
-                            if model_by_candidate.get(item[2]) == "flux_kontext"
-                            else -item[0]
-                        ),
-                    )[2]
-                else:
-                    rejected_scores[number] = [
-                        f"detail={item[0]:.3f}, layout={item[1]:.3f}"
-                        for item in scored
-                    ]
-            unresolved = [number for number in missing if number not in selected_by_shot]
-            if unresolved:
-                self.video_generation.fail_generation("结束关键帧回填不完整")
-                self.show_error(
-                    "结束关键帧连续性未通过",
-                    "以下镜头的候选与首帧过度漂移或几乎完全冻结，已保留候选但不会自动绑定：\n"
-                    + "\n".join(
-                        f"镜头 {number:02d}：{rejected_scores.get(number, [])}"
-                        for number in unresolved
-                    ),
-                )
-                return
-            bound: dict[int, Path] = {}
-            for number, source in selected_by_shot.items():
-                bound[number] = self.project_service.set_shot_end_image(
-                    project_slug,
-                    episode_number,
-                    number,
-                    source,
-                )
-            for payload in payloads:
-                number = int(payload["shot_number"])
-                if number in bound:
-                    payload["end_image"] = bound[number]
-            self.append_log(
-                f"已自动生成并绑定 {len(bound)} 个结束关键帧，继续 FLF2V 视频任务"
-            )
-            self.refresh_project()
-            self.video_generation.set_generating(False)
-            QTimer.singleShot(
-                0,
-                lambda: self.generate_shot_videos(
-                    episode_number,
-                    payloads,
-                    width,
-                    height,
-                    fps,
-                ),
-            )
-
-        self._start_progress_task(
-            task,
-            success,
-            lambda detail: self.video_generation.fail_generation(detail),
-            lambda percent, message: self.video_generation.set_progress(
-                percent,
-                message,
-            ),
-        )
-
     def save_video_settings(
         self,
         episode_number: int,
@@ -4816,14 +4569,13 @@ class MainWindow(QMainWindow):
         profiles = {spec.engine_profile for spec in specs}
         unsupported_profiles = profiles - {
             "comic_motion",
-            "wan22_ti2v_5b",
-            "wan22_flf2v",
             "minimax_h3_fl2va",
         }
         if unsupported_profiles:
             self.show_error(
-                "视频引擎尚未开放",
-                "以下引擎的任务字段已经就绪，但远程工作流尚未实现："
+                "视频引擎未接入",
+                "本地已接入 minimax_h3_fl2va（以及 comic_motion 漫画动效）；"
+                "以下引擎暂不支持："
                 + "、".join(sorted(unsupported_profiles)),
             )
             return
@@ -4875,14 +4627,6 @@ class MainWindow(QMainWindow):
 
                 if profile == "comic_motion":
                     batch = self.video_service.generate_clips(
-                        project_root,
-                        group_specs,
-                        progress_callback=group_progress,
-                    )
-                elif profile in {"wan22_ti2v_5b", "wan22_flf2v"}:
-                    assert config is not None
-                    batch = self.gpu_service.generate_wan_videos(
-                        config,
                         project_root,
                         group_specs,
                         progress_callback=group_progress,
@@ -6146,22 +5890,18 @@ class MainWindow(QMainWindow):
         self.last_gpu_status = status
         self.settings_page.set_busy(False)
         self.settings_page.set_h3_busy(False)
-        self.settings_page.set_flf_busy(False)
         self.settings_page.set_kontext_busy(False)
         self.settings_page.set_status(status)
         self.overview.set_gpu_status(status)
         self.characters.set_gpu_status(status)
         self.video_generation.set_ai_model_status(
             server_online=status.ssh_online,
-            model_ready=status.video_model_ready,
-            adapter_ready=status.video_runtime_ready,
-            model_name=status.video_model_name,
+            model_ready=status.h3_model_ready,
+            adapter_ready=status.h3_runtime_ready,
+            model_name=status.h3_model_name,
             h3_model_ready=status.h3_model_ready,
             h3_adapter_ready=status.h3_runtime_ready,
             h3_model_name=status.h3_model_name,
-            flf_model_ready=status.flf_model_ready,
-            flf_adapter_ready=status.flf_runtime_ready,
-            flf_model_name=status.flf_model_name,
         )
         if status.ssh_online and status.comfy_online and status.available_model_ids:
             self.set_activity("GPU 已就绪", "good")
@@ -6219,7 +5959,6 @@ class MainWindow(QMainWindow):
     def _on_gpu_error(self, detail: str) -> None:
         self.settings_page.set_busy(False)
         self.settings_page.set_h3_busy(False)
-        self.settings_page.set_flf_busy(False)
         self.settings_page.set_kontext_busy(False)
         self.set_activity("操作失败", "off")
         first_line = detail.splitlines()[0] if detail else "未知错误"

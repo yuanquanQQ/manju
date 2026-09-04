@@ -9,11 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 VideoEngineProfile = Literal[
     "comic_motion",
-    "wan22_ti2v_5b",
     "minimax_h3_fl2va",
-    "wan22_flf2v",
-    "wan22_animate",
-    "wan22_s2v",
 ]
 MotionStrength = Literal["low", "medium", "high"]
 ScreenDirection = Literal["auto", "left_to_right", "right_to_left", "static"]
@@ -66,8 +62,6 @@ class VideoRenderSpec(BaseModel):
                 raise ValueError("MiniMax H3 视频宽高必须是 32 的倍数")
             if self.fps != 24:
                 raise ValueError("MiniMax H3 固定使用 24fps")
-        if self.engine_profile == "wan22_flf2v" and not self.end_image:
-            raise ValueError("首尾帧视频引擎必须指定结束帧")
         return self
 
 

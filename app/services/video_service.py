@@ -2,7 +2,7 @@
 
 The first production profile is a deterministic FFmpeg-based comic-motion
 renderer.  It produces real, standardized MP4 artifacts now while keeping the
-render contract independent from the future Wan I2V adapter.
+render contract independent from the server-side MiniMax H3 FL2VA adapter.
 """
 
 from __future__ import annotations
@@ -259,8 +259,8 @@ class VideoRenderService:
             if unsupported:
                 labels = "、".join(sorted(unsupported))
                 raise RuntimeError(
-                    f"视频引擎 {labels} 的任务结构已经就绪，但服务器工作流尚未接入；"
-                    "当前请选择“漫画动效”生成预览。"
+                    f"视频引擎 {labels} 需通过对应的本地适配器生成；"
+                    "本地支持 minimax_h3_fl2va（以及 comic_motion 漫画动效）。"
                 )
             report(2, "视频编码器已就绪")
             total = len(specs)
@@ -607,6 +607,8 @@ class VideoRenderService:
                         path=path,
                         shot_number=index,
                         duration_seconds=self._probe_duration(path) or 3.0,
+                        transition_out="dissolve" if index < len(clips) else "cut",
+                        transition_frames=8 if index < len(clips) else 0,
                     )
                 )
         return timeline

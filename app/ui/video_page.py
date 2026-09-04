@@ -41,7 +41,6 @@ from app.services.video_service import MOTION_PRESETS, VideoRuntimeStatus
 
 class VideoGenerationPage(QWidget):
     generate_requested = Signal(int, object, int, int, int)
-    end_frames_requested = Signal(int, object, int, int, int)
     source_requested = Signal(int, int, object)
     end_source_requested = Signal(int, int, object)
     save_settings_requested = Signal(int, int, object)
@@ -92,15 +91,11 @@ class VideoGenerationPage(QWidget):
         runtime_layout.addWidget(QLabel("生成引擎"), 0, 0)
         self.engine = QComboBox()
         self.engine.addItem("漫画动效 · 本机 FFmpeg（仅静态推拉预览）", "comic_motion")
-        self.engine.addItem("Wan2.2 TI2V 5B · AI 人物自然动作", "wan22_ti2v_5b")
         self.engine.addItem(
             "MiniMax H3 FL2VA · 人物动作与原生音效配乐",
             "minimax_h3_fl2va",
         )
-        self.engine.addItem("Wan2.2 FLF2V 14B · 首尾帧动作控制", "wan22_flf2v")
-        self.engine.addItem("Wan2.2 Animate · 动作参考（待接入）", "wan22_animate")
-        self.engine.addItem("Wan2.2 S2V · 配音驱动（待接入）", "wan22_s2v")
-        self.engine.setCurrentIndex(2)
+        self.engine.setCurrentIndex(1)
         self.engine.setMinimumWidth(290)
         runtime_layout.addWidget(self.engine, 0, 1)
         self.runtime_pill = QLabel("检测中")
@@ -116,8 +111,8 @@ class VideoGenerationPage(QWidget):
         self.runtime_detail.setObjectName("muted")
         runtime_layout.addWidget(self.runtime_detail, 1, 1, 1, 3)
         self.ai_note = QLabel(
-            "AI 图生视频：Wan2.2 动作参数和任务结构已就绪；"
-            "尚未检测 GPU 服务器和视频模型。"
+            "AI 图生视频：MiniMax H3 本地生成已接入；"
+            "正在检测 GPU 服务器和视频模型。"
         )
         self.ai_note.setWordWrap(True)
         self.ai_note.setStyleSheet(
@@ -412,7 +407,7 @@ class VideoGenerationPage(QWidget):
         dubbing_layout.addWidget(self.audio_mode, 0, 1)
         dubbing_layout.addWidget(QLabel("说话人"), 0, 2)
         self.speaker = QLineEdit("旁白")
-        self.speaker.setPlaceholderText("旁白 / 秦风 / 林浪")
+        self.speaker.setPlaceholderText("旁白 / 角色名")
         dubbing_layout.addWidget(self.speaker, 0, 3)
         dubbing_layout.addWidget(QLabel("引擎"), 0, 4)
         self.tts_engine = QComboBox()
@@ -600,45 +595,33 @@ class VideoGenerationPage(QWidget):
         h3_model_ready: bool = False,
         h3_adapter_ready: bool = False,
         h3_model_name: str = "",
-        flf_model_ready: bool = False,
-        flf_adapter_ready: bool = False,
-        flf_model_name: str = "",
     ) -> None:
         self.ai_model_ready = server_online and model_ready
         self.ai_adapter_ready = self.ai_model_ready and adapter_ready
         self.ready_ai_engines = set()
-        if self.ai_adapter_ready:
-            self.ready_ai_engines.add("wan22_ti2v_5b")
         if server_online and h3_model_ready and h3_adapter_ready:
             self.ready_ai_engines.add("minimax_h3_fl2va")
-        if server_online and flf_model_ready and flf_adapter_ready:
-            self.ready_ai_engines.add("wan22_flf2v")
         if not server_online:
             text = (
                 "AI 图生视频：GPU 服务器未连接。需要服务器启动后检测 "
-                "Wan2.2 与 MiniMax H3。"
+                "MiniMax H3。"
             )
         elif self.ready_ai_engines:
             labels = []
-            if "wan22_ti2v_5b" in self.ready_ai_engines:
-                labels.append(model_name or "Wan2.2 TI2V 5B")
             if "minimax_h3_fl2va" in self.ready_ai_engines:
                 labels.append(h3_model_name or "MiniMax H3 FL2VA")
-            if "wan22_flf2v" in self.ready_ai_engines:
-                labels.append(flf_model_name or "Wan2.2 FLF2V 14B")
             text = (
                 f"AI 图生视频：{'、'.join(labels)} 已就绪；"
                 "H3 可生成原生环境声、音效和配乐。"
             )
-        elif model_ready or h3_model_ready or flf_model_ready:
+        elif model_ready or h3_model_ready:
             text = (
                 "AI 视频模型文件已检测到，但 ComfyUI 缺少对应原生节点；"
                 "请更新 ComfyUI 后重新检测。"
             )
         else:
             text = (
-                "AI 图生视频：服务器在线，但尚未检测到完整的 Wan2.2 或 "
-                "MiniMax H3 或 FLF2V 模型组合。"
+                "AI 图生视频：服务器在线，但尚未检测到完整的 MiniMax H3 模型组合。"
             )
         self.ai_note.setText(text)
 
@@ -1204,30 +1187,11 @@ class VideoGenerationPage(QWidget):
             status = "所选模型文件或 ComfyUI 原生节点尚未就绪。"
             QMessageBox.information(
                 self,
-                "AI 视频引擎尚未开放",
+                "AI 视频引擎未就绪",
                 f"{status}\n缺少：{'、'.join(unavailable)}\n\n"
                 "请到“连接与设置”启动服务器并重新检测。",
             )
             return
-        if any(
-            item.get("engine_profile") == "wan22_flf2v" for item in selected
-        ):
-            missing_end = [
-                int(item["shot_number"])
-                for item in selected
-                if item.get("engine_profile") == "wan22_flf2v"
-                and not item.get("end_image")
-            ]
-            if missing_end:
-                width, height = self.resolution.currentData()
-                self.end_frames_requested.emit(
-                    self.episode.number,
-                    selected,
-                    int(width),
-                    int(height),
-                    self.fps.value(),
-                )
-                return
         width, height = self.resolution.currentData()
         self.generate_requested.emit(
             self.episode.number,

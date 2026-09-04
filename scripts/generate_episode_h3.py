@@ -14,6 +14,8 @@ from app.services.gpu_service import GpuConnection, GpuServerService
 from app.services.video_service import VideoRenderService
 from workflows.minimax_h3.generate_video import H3_MODEL, H3_TEXT_ENCODER
 
+H3_GENERATION_REVISION = "h3_native_v2_identity_dialogue_transition"
+
 VOICE_CONTINUITY = {
     "旁白": "成熟中国男声，低沉温厚、冷静克制，近距离影视旁白，不朗诵、不拖腔",
     "秦风": "十八岁中国青年男声，清朗偏低、沉静克制，少年声线中有超越年龄的威压",
@@ -70,6 +72,7 @@ def _valid_h3_candidate(project_root: Path, shot: dict) -> tuple[Path, Path] | N
             metadata.get("engine_profile") == "minimax_h3_fl2va"
             and metadata.get("model_name") == H3_MODEL
             and metadata.get("text_encoder") == H3_TEXT_ENCODER
+            and metadata.get("generation_revision") == H3_GENERATION_REVISION
             and metadata.get("native_audio_mode") == "native_full"
             and bool(str(metadata.get("dialogue_prompt") or "").strip())
             and (metadata.get("technical_qc") or {}).get("checks", {}).get("has_audio") is True
@@ -98,6 +101,7 @@ def _pending_h3_candidates(project_root: Path, shot: dict) -> list[Path]:
             metadata.get("engine_profile") == "minimax_h3_fl2va"
             and metadata.get("model_name") == H3_MODEL
             and metadata.get("text_encoder") == H3_TEXT_ENCODER
+            and metadata.get("generation_revision") == H3_GENERATION_REVISION
             and metadata.get("approval_status") == "pending_visual_motion_audio_review"
             and (metadata.get("technical_qc") or {}).get("technical_pass") is True
             and metadata.get("native_audio_mode") == "native_full"
@@ -107,7 +111,7 @@ def _pending_h3_candidates(project_root: Path, shot: dict) -> list[Path]:
     return pending
 
 
-def _native_dialogue_prompt(shot: dict) -> str:
+def _native_dialogue_prompt(shot: dict, *, compact: bool = False) -> str:
     audio = shot.get("audio_generation") or {}
     speaker = str(audio.get("speaker") or "旁白").strip() or "旁白"
     text = str(audio.get("text") or "").strip()
@@ -127,12 +131,19 @@ def _native_dialogue_prompt(shot: dict) -> str:
         if mode == "auto_narration" or speaker == "旁白"
         else f"由画面中的{speaker}本人说出，嘴唇与每个汉字自然同步，其他人物不得开口"
     )
-    return (
+    prompt = (
         f"语言：标准中国普通话。说话人：{speaker}。固定声线：{voice}。"
         f"发声位置：{placement}。必须逐字、只说一次：『{text}』。"
         "禁止改词、漏词、加词、重复、翻译、唱诵、电子音和额外人声。"
         f"表演要求：{performance or '自然影视对白，停连随语义，不使用播音腔。'}"
     )[:1600]
+    if compact:
+        return (
+            f"说话人：{speaker}。"
+            f"发声位置：{placement}。"
+            f"必须逐字、只说一次：『{text}』。"
+        )
+    return prompt
 
 
 def _video_spec(project_root: Path, episode_number: int, shot: dict) -> VideoRenderSpec:
@@ -151,7 +162,7 @@ def _video_spec(project_root: Path, episode_number: int, shot: dict) -> VideoRen
         negative_prompt=str(video.get("negative_prompt") or ""),
         motion_prompt=str(video.get("motion_prompt") or ""),
         native_audio_mode="native_full",
-        dialogue_prompt=_native_dialogue_prompt(shot),
+        dialogue_prompt=_native_dialogue_prompt(shot, compact=True),
         sound_effect_prompt=str(video.get("sound_effect_prompt") or ""),
         music_prompt=str(video.get("music_prompt") or ""),
         camera_movement=str(video.get("camera_movement") or "auto"),
@@ -160,7 +171,9 @@ def _video_spec(project_root: Path, episode_number: int, shot: dict) -> VideoRen
         transition_out=str(video.get("transition_out") or "cut"),
         transition_frames=int(video.get("transition_frames") or 0),
         handle_frames=int(video.get("handle_frames") or 0),
-        candidate_count=max(2, min(int(video.get("candidate_count") or 2), 4)),
+        # Start with one candidate; the run loop requests a second only when
+        # the first candidate fails objective technical QC.
+        candidate_count=1,
         duration_seconds=float(
             video.get("duration_seconds") or shot.get("duration_seconds") or 3.0
         ),
@@ -171,7 +184,13 @@ def _video_spec(project_root: Path, episode_number: int, shot: dict) -> VideoRen
     )
 
 
-def run(project_slug: str, episode_number: int, workspace: Path) -> Path:
+def run(
+    project_slug: str,
+    episode_number: int,
+    workspace: Path,
+    *,
+    max_shots: int | None = 20,
+) -> Path:
     projects_dir = workspace / "projects"
     project_root = (projects_dir / project_slug).resolve()
     episode_path = project_root / "production" / "episodes" / f"episode_{episode_number:03d}.json"
@@ -188,8 +207,31 @@ def run(project_slug: str, episode_number: int, workspace: Path) -> Path:
 
     episode = _read_episode(episode_path)
     shots = sorted(episode.get("shots") or [], key=lambda item: item["shot_number"])
+    if max_shots is not None:
+        if max_shots < 1:
+            raise ValueError("max_shots must be at least 1")
+        shots = shots[:max_shots]
     if not shots:
         raise RuntimeError(f"Episode has no shots: {episode_path}")
+
+    # Fail before spending GPU time when the selected test slice is incomplete.
+    cast_path = project_root / "production" / "cast_selection.json"
+    cast = _read_episode(cast_path) if cast_path.is_file() else {}
+    selections = cast.get("selections") or {}
+    for shot in shots:
+        number = int(shot["shot_number"])
+        video = shot.get("video_generation") or {}
+        source = project_root / str(video.get("source_image") or "")
+        if not source.is_file():
+            raise RuntimeError(f"Shot {number:03d} source image is missing: {source}")
+        audio = shot.get("audio_generation") or {}
+        spoken = str(audio.get("text") or shot.get("dialogue") or "").strip()
+        if not spoken:
+            raise RuntimeError(f"Shot {number:03d} has no exact dialogue/narration text")
+        for character in shot.get("characters") or []:
+            name = character if isinstance(character, str) else character.get("name", "")
+            if name and not str(selections.get(name) or "").strip():
+                raise RuntimeError(f"Shot {number:03d} character {name!r} has no approved cast reference")
 
     for shot in shots:
         shot_number = int(shot["shot_number"])
@@ -237,20 +279,38 @@ def run(project_slug: str, episode_number: int, workspace: Path) -> Path:
             print(f"[SAVED] shot={clip.shot_number:03d} file={clip.video_path}", flush=True)
 
         print(f"[START] shot={shot_number:03d}", flush=True)
-        gpu_service.generate_h3_videos(
-            config,
-            project_root,
-            [spec],
-            progress_callback=progress,
-            clip_callback=persist,
-        )
+        for attempt in range(1, 3):
+            batch = gpu_service.generate_h3_videos(
+                config,
+                project_root,
+                [spec],
+                progress_callback=progress,
+                clip_callback=persist,
+            )
+            technical_ok = any(
+                (json.loads(clip.manifest_path.read_text(encoding="utf-8")).get("technical_qc") or {}).get(
+                    "technical_pass"
+                ) is True
+                for clip in batch.clips
+            )
+            if technical_ok or attempt == 2:
+                break
+            print(
+                f"[RETRY] shot={shot_number:03d} technical QC failed; generating candidate 2",
+                flush=True,
+            )
         episode = _read_episode(episode_path)
         shots = sorted(episode.get("shots") or [], key=lambda item: item["shot_number"])
+        if max_shots is not None:
+            shots = shots[:max_shots]
 
     episode = _read_episode(episode_path)
     timeline: list[EpisodeClipSpec] = []
     missing: list[int] = []
-    for shot in sorted(episode.get("shots") or [], key=lambda item: item["shot_number"]):
+    final_shots = sorted(episode.get("shots") or [], key=lambda item: item["shot_number"])
+    if max_shots is not None:
+        final_shots = final_shots[:max_shots]
+    for shot in final_shots:
         video = shot.get("video_generation") or {}
         selected = project_root / str(video.get("selected_video") or "")
         if not selected.is_file():
@@ -292,8 +352,19 @@ def main() -> None:
     parser.add_argument("--project", default="jueshi")
     parser.add_argument("--episode", type=int, default=1)
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
+    parser.add_argument(
+        "--max-shots",
+        type=int,
+        default=20,
+        help="仅生成前 N 个镜头；传 0 表示整集",
+    )
     args = parser.parse_args()
-    run(args.project, args.episode, args.workspace.resolve())
+    run(
+        args.project,
+        args.episode,
+        args.workspace.resolve(),
+        max_shots=args.max_shots or None,
+    )
 
 
 if __name__ == "__main__":

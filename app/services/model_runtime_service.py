@@ -88,26 +88,6 @@ LOCAL_MODEL_DEFINITIONS: tuple[LocalModelDefinition, ...] = (
         required_nodes=("UNETLoader", "DualCLIPLoader", "VAELoader"),
     ),
     LocalModelDefinition(
-        "wan22_ti2v_5b",
-        "Wan2.2 TI2V 5B",
-        "视频",
-        "comfyui",
-        8.0,
-        relative_files=(
-            "ComfyUI/models/diffusion_models/"
-            "wan2.2_ti2v_5B_fp16.safetensors",
-            "ComfyUI/models/text_encoders/"
-            "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-            "ComfyUI/models/vae/wan2.2_vae.safetensors",
-        ),
-        adapter_supported=True,
-        required_nodes=(
-            "Wan22ImageToVideoLatent",
-            "CreateVideo",
-            "SaveVideo",
-        ),
-    ),
-    LocalModelDefinition(
         "minimax_h3_fl2va",
         "MiniMax H3 FL2VA（INT8/NVFP4）",
         "音视频生成",
@@ -139,41 +119,6 @@ LOCAL_MODEL_DEFINITIONS: tuple[LocalModelDefinition, ...] = (
             "LatentSync/checkpoints/latentsync_unet.pt",
             "LatentSync/checkpoints/whisper/tiny.pt",
         ),
-    ),
-    LocalModelDefinition(
-        "wan22_s2v_14b",
-        "Wan2.2 S2V 14B",
-        "音频驱动视频",
-        "native",
-        80.0,
-        directory_name="Wan2.2-S2V-14B",
-        minimum_directory_gb=20.0,
-    ),
-    LocalModelDefinition(
-        "wan22_animate_14b",
-        "Wan2.2 Animate 14B",
-        "动作驱动视频",
-        "native",
-        24.0,
-        directory_name="Wan2.2-Animate-14B",
-        minimum_directory_gb=20.0,
-    ),
-    LocalModelDefinition(
-        "wan22_flf2v_14b",
-        "Wan2.2 FLF2V 14B",
-        "首尾帧视频",
-        "comfyui",
-        24.0,
-        relative_files=(
-            "ComfyUI/models/diffusion_models/"
-            "wan2.2_i2v_high_noise_14B_fp16.safetensors",
-            "ComfyUI/models/diffusion_models/"
-            "wan2.2_i2v_low_noise_14B_fp16.safetensors",
-            "ComfyUI/models/text_encoders/"
-            "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-            "ComfyUI/models/vae/wan_2.1_vae.safetensors",
-        ),
-        required_nodes=("WanFirstLastFrameToVideo",),
     ),
 )
 
