@@ -243,6 +243,8 @@ def run(
     # Shot chaining: shot N's first frame = shot N-1's last frame. The previous
     # clip's final frame is extracted locally with ffmpeg and uploaded as the
     # next shot's source_image so the two clips meet at a pixel-exact boundary.
+    # The trailing audio is likewise extracted and fed as reference_audio (T8
+    # drive_audio) so the voice timbre and cadence carry across the boundary.
     video_service = VideoRenderService()
     previous_video_path: Path | None = None
     chained_dir = project_root / "production" / "video_inputs" / f"episode_{episode_number:03d}"
@@ -282,16 +284,14 @@ def run(
 
         if chain_shots and previous_video_path is not None:
             chained_frame = chained_dir / f"shot_{shot_number:03d}_chained.png"
+            chained_audio = chained_dir / f"shot_{shot_number:03d}_chained_ref.wav"
             frame_count = normalize_frame_count(round(spec.duration_seconds * 24))
+            updates: dict = {}
             if video_service.extract_last_frame(
                 previous_video_path, chained_frame, frame_count=frame_count
             ):
-                spec = spec.model_copy(
-                    update={
-                        "source_image": chained_frame,
-                        "chained_from_previous": True,
-                    }
-                )
+                updates["source_image"] = chained_frame
+                updates["chained_from_previous"] = True
                 print(
                     f"[CHAIN] shot={shot_number:03d} first_frame<-shot_prev_last "
                     f"{previous_video_path.name}",
@@ -303,6 +303,19 @@ def run(
                     f"frame from {previous_video_path.name}; using storyboard frame",
                     flush=True,
                 )
+            # Extract the trailing audio as reference_audio (T8 drive_audio) so
+            # the model inherits the previous shot's voice timbre and cadence.
+            if video_service.extract_last_audio(
+                previous_video_path, chained_audio, seconds=2.0
+            ):
+                updates["reference_audio"] = chained_audio
+                print(
+                    f"[CHAIN_AUDIO] shot={shot_number:03d} ref_audio<-shot_prev_tail "
+                    f"{previous_video_path.name}",
+                    flush=True,
+                )
+            if updates:
+                spec = spec.model_copy(update=updates)
 
         def progress(percent: int, _message: str, number: int = shot_number) -> None:
             print(f"[PROGRESS] shot={number:03d} percent={percent}", flush=True)

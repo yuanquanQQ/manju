@@ -1638,6 +1638,16 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
                 "Dialogue: no spoken dialogue and no narration; leave the vocal "
                 "frequency range clear for precise post-production dubbing."
             )
+        # When a reference_audio (T8 drive_audio) from the previous shot's tail
+        # is supplied, instruct the model to inherit that voice timbre and
+        # cadence so speech stays continuous across the shot boundary.
+        if spec.reference_audio and audio_mode != "off":
+            voice_link = (
+                " Voice continuity: match the supplied reference audio's timbre, "
+                "register and cadence exactly; this is the same speaker continuing "
+                "from the previous shot, do not introduce a new voice."
+            )
+            dialogue = dialogue + voice_link
         sound = (
             spec.sound_effect_prompt.strip()
             or "Clearly audible natural ambience, synchronized footsteps and cloth movement."

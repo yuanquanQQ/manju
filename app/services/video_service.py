@@ -894,6 +894,55 @@ class VideoRenderService:
             return False
         return destination.is_file()
 
+    def extract_last_audio(
+        self,
+        path: Path,
+        destination: Path,
+        *,
+        seconds: float = 2.0,
+    ) -> bool:
+        """Extract the trailing audio segment of a clip as a wav for chaining.
+
+        Companion to :meth:`extract_last_frame`: shot N-1's final audio is fed
+        to shot N as ``reference_audio`` (T8 ``drive_audio``) so the model
+        inherits the preceding voice timbre and cadence. Uses a negative seek
+        (``-sseof``) so the tail is captured regardless of container timing.
+        """
+
+        source = Path(path).resolve()
+        if not source.is_file():
+            return False
+        destination = Path(destination).resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        # -sseof seeks from end of file; clamp the tail length to the source
+        # duration so very short clips do not produce empty output.
+        command = [
+            str(self.ffmpeg_executable),
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-sseof",
+            f"-{max(0.1, seconds)}",
+            "-i",
+            str(source),
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "32000",
+            "-acodec",
+            "pcm_s16le",
+            "-t",
+            f"{max(0.1, seconds)}",
+            str(destination),
+        ]
+        try:
+            self._run(command, timeout=120)
+        except Exception:
+            return False
+        return destination.is_file()
+
     @staticmethod
     def _motion_filter(
         preset: str,

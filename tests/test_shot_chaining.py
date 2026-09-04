@@ -84,6 +84,34 @@ def test_extract_last_frame_returns_false_when_source_missing(tmp_path):
     assert ok is False
 
 
+def test_extract_last_audio_uses_sseof_and_mono(tmp_path, monkeypatch):
+    service = VideoRenderService.__new__(VideoRenderService)
+    service.ffmpeg_executable = Path("ffmpeg")
+    captured: list[list[str]] = []
+
+    monkeypatch.setattr(VideoRenderService, "_run", _patched_run(captured))
+
+    source = tmp_path / "v.mp4"
+    source.write_bytes(b"mp4")
+    destination = tmp_path / "tail.wav"
+
+    ok = service.extract_last_audio(source, destination, seconds=2.0)
+    assert ok is True
+    args = captured[0]
+    assert "-sseof" in args
+    assert "-2.0" in args
+    assert "-vn" in args  # drop video
+    assert "pcm_s16le" in args
+    assert destination.is_file()
+
+
+def test_extract_last_audio_returns_false_when_source_missing(tmp_path):
+    service = VideoRenderService.__new__(VideoRenderService)
+    service.ffmpeg_executable = Path("ffmpeg")
+    ok = service.extract_last_audio(tmp_path / "nope.mp4", tmp_path / "out.wav")
+    assert ok is False
+
+
 def test_revision_is_chained():
     assert H3_GENERATION_REVISION == "h3_t8_chained_v1"
 
@@ -99,6 +127,35 @@ def test_unchained_prompt_uses_begin_from_first_frame():
     spec = _spec(1, Path("a.png"))
     prompt = GpuServerService._h3_positive_prompt(spec)
     assert "Begin exactly from the supplied first frame" in prompt
+
+
+def test_chained_prompt_with_reference_audio_adds_voice_continuity():
+    spec = (
+        _spec(2, Path("a.png"))
+        .model_copy(
+            update={
+                "chained_from_previous": True,
+                "reference_audio": Path("prev_tail.wav"),
+            }
+        )
+    )
+    prompt = GpuServerService._h3_positive_prompt(spec)
+    assert "Voice continuity" in prompt
+    assert "same speaker continuing" in prompt
+
+
+def test_off_mode_omits_voice_continuity_even_with_reference_audio():
+    spec = (
+        _spec(2, Path("a.png"))
+        .model_copy(
+            update={
+                "native_audio_mode": "off",
+                "reference_audio": Path("prev_tail.wav"),
+            }
+        )
+    )
+    prompt = GpuServerService._h3_positive_prompt(spec)
+    assert "Voice continuity" not in prompt
 
 
 def _make_episode(project_root: Path, shot_numbers: list[int]) -> Path:
@@ -233,14 +290,25 @@ def test_run_chains_shot_two_first_frame_from_shot_one(tmp_path, monkeypatch):
         "scripts.generate_episode_h3.GpuServerService.generate_h3_videos", tracking_generate
     )
 
-    def fake_extract(self, path, destination, *, frame_count=None):
+    def fake_extract_frame(self, path, destination, *, frame_count=None):
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(b"png")
         chain_records.append(destination)
         return True
 
+    audio_records: list[Path] = []
+
+    def fake_extract_audio(self, path, destination, *, seconds=2.0):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"wav")
+        audio_records.append(destination)
+        return True
+
     monkeypatch.setattr(
-        "scripts.generate_episode_h3.VideoRenderService.extract_last_frame", fake_extract
+        "scripts.generate_episode_h3.VideoRenderService.extract_last_frame", fake_extract_frame
+    )
+    monkeypatch.setattr(
+        "scripts.generate_episode_h3.VideoRenderService.extract_last_audio", fake_extract_audio
     )
 
     run("jueshi", 1, workspace, max_shots=2, chain_shots=True)
@@ -251,6 +319,12 @@ def test_run_chains_shot_two_first_frame_from_shot_one(tmp_path, monkeypatch):
     assert len(chain_records) == 1
     assert chain_records[0].name == "shot_002_chained.png"
     assert generated_specs[1].source_image == chain_records[0]
+    # Shot 2 inherits the previous shot's tail audio as reference_audio.
+    assert generated_specs[0].reference_audio is None
+    assert generated_specs[1].reference_audio is not None
+    assert len(audio_records) == 1
+    assert audio_records[0].name == "shot_002_chained_ref.wav"
+    assert generated_specs[1].reference_audio == audio_records[0]
 
 
 def test_run_no_chain_shots_keeps_independent_frames(tmp_path, monkeypatch):
@@ -288,6 +362,7 @@ def test_run_no_chain_shots_keeps_independent_frames(tmp_path, monkeypatch):
         / "shot_002.png"
     )
     assert generated_specs[1].source_image == original_shot2_source.resolve()
+    assert all(spec.reference_audio is None for spec in generated_specs)
 
 
 def _fake_generate_impl(tmp_path: Path):
