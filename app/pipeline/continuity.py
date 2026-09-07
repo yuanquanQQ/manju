@@ -452,7 +452,19 @@ def plan_episode_continuity(
         if force or not str(plan.get("transition_strategy") or "").strip():
             plan["transition_strategy"] = strategy
             plan["match_action"] = match_action[:500]
-        if force or not str(video.get("transition_out") or "").strip():
+        # Scene breaks (different group_id) must always use the continuity-
+        # planned transition (dissolve/fade_black), never the LLM's default
+        # "cut". Within the same scene group, keep the LLM's value if it set
+        # one, since the director may have a creative reason for a specific cut.
+        is_scene_break = (
+            index + 1 < len(shots)
+            and str(plan.get("group_id") or "")
+            != str(
+                (shots[index + 1].get("continuity_plan") or {}).get("group_id")
+                or ""
+            )
+        )
+        if force or is_scene_break or not str(video.get("transition_out") or "").strip():
             video["transition_out"] = transition_out
             video["transition_frames"] = transition_frames
             video["handle_frames"] = max(

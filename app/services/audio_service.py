@@ -89,6 +89,7 @@ class DubbingLineResult:
     source_video_duration_seconds: float
     timeline_duration_seconds: float
     source_has_audio: bool = False
+    source_has_native_dialogue: bool = False
 
 
 @dataclass(slots=True)
@@ -334,16 +335,31 @@ class DubbingService:
                     spec.preserve_source_audio
                     and self._has_audio_stream(source_video)
                 )
-                timeline_duration = (
-                    video_duration
-                    if spec.mode == "mute"
-                    else max(
-                        video_duration,
-                        audio_duration
-                        + spec.lead_seconds
-                        + spec.tail_seconds,
-                    )
+                # H3 native_full mode synthesizes dialogue audio. When we
+                # re-dub such a shot with TTS, the source contains a competing
+                # voice saying the same line. Flag it so _render_segment can
+                # suppress the vocal frequency range in the background bed.
+                source_has_native_dialogue = (
+                    source_has_audio and spec.mode == "dialogue"
                 )
+                audio_based_duration = (
+                    audio_duration
+                    + spec.lead_seconds
+                    + spec.tail_seconds
+                )
+                if spec.mode == "mute":
+                    timeline_duration = video_duration
+                else:
+                    # Cap the stretch ratio: if TTS audio is much longer than
+                    # the video, stretching the video to match produces ugly
+                    # slow-motion. Cap at 1.3× — beyond that, let the audio
+                    # be trimmed (the TTS tail will be cut) rather than making
+                    # the motion unnaturally slow.
+                    max_duration = video_duration * 1.3
+                    timeline_duration = min(
+                        max(video_duration, audio_based_duration),
+                        max_duration,
+                    )
                 metadata = DubbingArtifactMetadata(
                     kind="shot_speech",
                     engine=actual_engine,
@@ -403,6 +419,7 @@ class DubbingService:
                     source_video_duration_seconds=video_duration,
                     timeline_duration_seconds=timeline_duration,
                     source_has_audio=source_has_audio,
+                    source_has_native_dialogue=source_has_native_dialogue,
                 )
                 results.append(result)
                 heartbeat_job(job.id, index / len(specs) * 0.6)
@@ -670,23 +687,48 @@ class DubbingService:
             target,
         )
         if result.source_has_audio and spec.mode == "mute":
+            # Mute shot with preserved source audio: keep the ambience but add
+            # a fade-in/out so the segment boundary does not sound like a hard
+            # cut when concatenated next to a voiced segment.
+            fade_ms = min(200, int(target * 500))
             audio_filter = (
                 "[0:a]aresample=48000,"
                 f"volume={spec.source_audio_gain_db:.2f}dB,"
                 f"apad=pad_dur={target:.3f},atrim=duration={target:.3f},"
-                "loudnorm=I=-18:TP=-1.5:LRA=14[a]"
+                "loudnorm=I=-18:TP=-1.5:LRA=14,"
+                f"afade=t=in:st=0:d={fade_ms / 1000:.3f},"
+                f"afade=t=out:st={max(0, target - fade_ms / 1000):.3f}:"
+                f"d={fade_ms / 1000:.3f}[a]"
             )
         elif result.source_has_audio:
             duck_ratio = max(
                 2.0,
                 min(20.0, abs(spec.ducking_gain_db) / 1.5),
             )
+            # When the source video was generated with native_full audio,
+            # H3 synthesizes its own dialogue. Apply a bandstop filter to
+            # suppress the vocal frequency range (300-3400 Hz) in the
+            # background bed so the H3-synthesized voice does not overlap
+            # with the TTS-dubbed voice, while preserving ambience/music.
+            if result.source_has_native_dialogue:
+                bed_filter = (
+                    "aresample=48000,"
+                    "highpass=f=300:order=2,lowpass=f=3400:order=2,"
+                    "lowpass=f=300:order=2,highpass=f=3400:order=2,"
+                    "loudnorm=I=-24:TP=-3:LRA=14,"
+                    f"volume={spec.source_audio_gain_db - 6:.2f}dB,"
+                    f"apad=pad_dur={target:.3f},atrim=duration={target:.3f}"
+                )
+            else:
+                bed_filter = (
+                    "aresample=48000,loudnorm=I=-24:TP=-3:LRA=14,"
+                    f"volume={spec.source_audio_gain_db:.2f}dB,"
+                    f"apad=pad_dur={target:.3f},atrim=duration={target:.3f}"
+                )
             audio_filter = (
                 f"{voice_filter};"
                 "[voice]asplit=2[voice_key][voice_mix];"
-                "[0:a]aresample=48000,loudnorm=I=-24:TP=-3:LRA=14,"
-                f"volume={spec.source_audio_gain_db:.2f}dB,"
-                f"apad=pad_dur={target:.3f},atrim=duration={target:.3f}[bed];"
+                f"[0:a]{bed_filter}[bed];"
                 "[bed][voice_key]sidechaincompress="
                 f"threshold=0.025:ratio={duck_ratio:.2f}:"
                 "attack=20:release=350[ducked];"
@@ -695,7 +737,19 @@ class DubbingService:
                 "alimiter=limit=0.95,loudnorm=I=-16:TP=-1.5:LRA=11[a]"
             )
         else:
-            audio_filter = f"{voice_filter};[voice]anull[a]"
+            # Source video has no audio (e.g. LatentSync lip-sync output). We
+            # only have the TTS voice. Add a short fade-in/out so the segment
+            # does not start/end abruptly when concatenated next to segments
+            # that do have background audio — this smooths the audible jump
+            # between lip-synced shots (dry voice) and non-lip-synced shots
+            # (voice + background bed).
+            fade_ms = min(150, int(target * 500))
+            audio_filter = (
+                f"{voice_filter};"
+                f"[voice]afade=t=in:st=0:d={fade_ms / 1000:.3f},"
+                f"afade=t=out:st={max(0, target - fade_ms / 1000):.3f}:"
+                f"d={fade_ms / 1000:.3f}[a]"
+            )
         filter_graph = f"[0:v]{video_filter}[v];{audio_filter}"
         self._run(
             [
@@ -818,9 +872,9 @@ class DubbingService:
         )
         subtitle_filter = (
             f"subtitles='{escaped}':"
-            "force_style='FontName=Microsoft YaHei,FontSize=22,"
+            "force_style='FontName=Microsoft YaHei,FontSize=28,"
             "PrimaryColour=&H00FFFFFF,OutlineColour=&H80000000,"
-            "BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=38'"
+            "BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=42'"
         )
         video_filter = subtitle_filter
         if visible_ai_label:
@@ -841,8 +895,22 @@ class DubbingService:
                 "medium",
                 "-crf",
                 "18",
+                # Episode-level loudness normalization: each segment was
+                # individually normalized to -16 LUFS, but per-segment
+                # loudnorm compresses dynamics differently. A final pass over
+                # the whole episode evens out residual loudness jumps between
+                # segments (e.g. lip-synced dry-voice shots vs full-audio
+                # shots) so the viewer hears a consistent level throughout.
+                "-af",
+                "loudnorm=I=-16:TP=-1.5:LRA=11",
                 "-c:a",
-                "copy",
+                "aac",
+                "-b:a",
+                "192k",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
                 "-movflags",
                 "+faststart",
                 str(destination),
@@ -978,12 +1046,22 @@ class DubbingService:
 
     @staticmethod
     def _strip_speaker_prefix(text: str, speaker: str) -> str:
+        """Normalize subtitle text, keeping the speaker prefix for readability.
+
+        Multi-person dialogue scenes need the speaker name visible so the
+        audience can tell who is talking. Previously the prefix was stripped,
+        but that made group conversations ambiguous.
+        """
         value = " ".join(text.strip().split())
         if speaker:
             for separator in ("：", ":"):
                 prefix = f"{speaker}{separator}"
                 if value.startswith(prefix):
-                    return value[len(prefix) :].lstrip()
+                    # Already has a speaker prefix — keep it as-is.
+                    return value
+            # No prefix present — prepend the speaker for clarity.
+            if value:
+                return f"{speaker}：{value}"
         return value
 
     @staticmethod

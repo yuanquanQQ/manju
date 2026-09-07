@@ -281,9 +281,9 @@ def test_dubbing_service_reuses_prepared_lipsync_audio(
     assert manifest["prepared_audio"] == "production/audio/lipsync.mp3"
     episode_subtitles = result.subtitle_path.read_text(encoding="utf-8")
     assert "00:00:00,100 --> 00:00:00,550" in episode_subtitles
-    assert "林浪：" not in episode_subtitles
+    assert "林浪：" in episode_subtitles
     assert (
-        "你若完成今年灵药收缴，\n本公子便把林家铁矿矿脉拱手相让！"
+        "林浪：你若完成今年灵药收缴，\n本公子便把林家铁矿矿脉拱手相让！"
         in episode_subtitles
     )
 

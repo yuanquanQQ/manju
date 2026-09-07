@@ -50,6 +50,10 @@ H3_T8_SHIFT_VIDEO = 12.0
 H3_T8_SHIFT_AUDIO = 3.0
 H3_GENERATION_REVISION = "h3_t8_chained_v1"
 
+# Map motion_strength to actual T8 shift_video values. Higher shift = more
+# motion. The default 12.0 corresponds to "medium"; low/high scale around it.
+_MOTION_STRENGTH_SHIFT = {"low": 7.0, "medium": 12.0, "high": 18.0}
+
 
 @dataclass(slots=True)
 class GpuConnection:
@@ -1435,7 +1439,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                         "--scheduler",
                         H3_T8_SCHEDULER,
                         "--shift-video",
-                        str(H3_T8_SHIFT_VIDEO),
+                        str(self._shift_video_for(spec.motion_strength)),
                         "--shift-audio",
                         str(H3_T8_SHIFT_AUDIO),
                         "--audio-mode",
@@ -1739,6 +1743,62 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
         return override if override else "native"
 
     @staticmethod
+    def _shift_video_for(motion_strength: str) -> float:
+        """Map motion_strength (low/medium/high) to a T8 shift_video value.
+
+        Previously motion_strength was only written into the prompt as an
+        English word with no actual effect — all shots used the same global
+        shift_video. Now it directly controls the T8 video denoising schedule,
+        so low/high produce visibly different motion amplitudes.
+        """
+        return _MOTION_STRENGTH_SHIFT.get(
+            motion_strength, H3_T8_SHIFT_VIDEO
+        )
+
+    # Common Chinese motion verbs → English for H3 prompt clarity.
+    _MOTION_MAP: dict[str, str] = {
+        "走": "walk", "跑": "run", "转身": "turn around", "回头": "look back",
+        "抬头": "look up", "低头": "look down", "举手": "raise hand",
+        "挥手": "wave hand", "握拳": "clench fist", "坐下": "sit down",
+        "站起": "stand up", "站立": "standing", "靠近": "approach",
+        "后退": "step back", "推": "push", "拉": "pull", "抓": "grab",
+        "指": "point at", "跪": "kneel", "跳跃": "jump", "蹲下": "crouch",
+        "微笑": "smile", "皱眉": "frown", "点头": "nod", "摇头": "shake head",
+        "闭眼": "close eyes", "睁眼": "open eyes", "张嘴": "open mouth",
+        "闭嘴": "close mouth", "喘气": "pant", "叹气": "sigh",
+        "哭泣": "cry", "怒视": "glare", "凝视": "gaze at",
+        "扫过": "scan across", "缓缓": "slowly", "迅速": "rapidly",
+        "药圃": "herb garden", "剑": "sword", "扇子": "fan",
+        "目光": "gaze", "脚步": "footsteps", "衣袖": "sleeves",
+        "风": "wind", "光": "light", "云": "clouds",
+        "走来": "walks toward", "离去": "walks away",
+        "抬起": "lifts up", "放下": "puts down", "接过": "receives",
+        "递给": "hands to", "抚摸": "touches", "擦": "wipe",
+        "转身离开": "turns and leaves", "走进": "walks into",
+        "走出": "walks out of", "看向": "looks at",
+        "缓缓转身": "slowly turns around", "猛然": "suddenly",
+        "轻轻": "gently", "用力": "with effort",
+    }
+
+    @classmethod
+    def _translate_motion(cls, text: str) -> str:
+        """Translate common Chinese motion words to English for the H3 prompt.
+
+        H3's text encoder understands mixed-language prompts, but action
+        descriptions are more reliably followed when the key verbs are in
+        English. This does a lightweight keyword substitution — it won't
+        produce grammatically perfect English, but the action verbs that the
+        model keys on will be unambiguous.
+        """
+        if not text:
+            return ""
+        result = text
+        for cn, en in cls._MOTION_MAP.items():
+            result = result.replace(cn, f" {en} ")
+        # Clean up double spaces from replacements.
+        return " ".join(result.split())
+
+    @staticmethod
     def _h3_positive_prompt(spec: VideoRenderSpec) -> str:
         duration = max(4.0, min(spec.duration_seconds, 15.0))
         handle_seconds = max(3, min(spec.handle_frames, 12)) / 24
@@ -1850,8 +1910,8 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
                     "Timeline:\n"
                     f"[0.00s-{setup_end:.2f}s] {opening}\n"
                     f"[{setup_end:.2f}s-{action_end:.2f}s] Perform one physically "
-                    f"coherent action: {spec.subject_motion.strip() or spec.motion_prompt.strip()}. "
-                    f"Environment motion: {spec.environment_motion.strip()}.\n"
+                    f"coherent action: {GpuServerService._translate_motion(spec.subject_motion.strip() or spec.motion_prompt.strip())}. "
+                    f"Environment motion: {GpuServerService._translate_motion(spec.environment_motion.strip())}.\n"
                     f"[{action_end:.2f}s-{duration:.2f}s] Complete the action with "
                     f"natural momentum and settle. Hold the final boundary for "
                     f"approximately {handle_seconds:.2f}s. {end_frame} "
