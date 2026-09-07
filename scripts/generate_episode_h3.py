@@ -190,6 +190,23 @@ def _video_spec(project_root: Path, episode_number: int, shot: dict) -> VideoRen
     )
 
 
+def _continuity_keys(shot: dict) -> tuple[str, str]:
+    """Return (group_id, cast_signature) used to gate shot chaining.
+
+    continuity.py plans these so that a scene/flashback break or a cast change
+    severs the link between adjacent shots even when they are physically
+    consecutive in the episode. Chaining across such a boundary would force the
+    previous scene's final frame onto a different scene/roster and produce a
+    visible jump at the opening.
+    """
+    plan = shot.get("continuity_plan")
+    plan = plan if isinstance(plan, dict) else {}
+    return (
+        str(plan.get("group_id") or ""),
+        str(plan.get("cast_signature") or ""),
+    )
+
+
 def run(
     project_slug: str,
     episode_number: int,
@@ -247,6 +264,8 @@ def run(
     # drive_audio) so the voice timbre and cadence carry across the boundary.
     video_service = VideoRenderService()
     previous_video_path: Path | None = None
+    previous_group_id = ""
+    previous_cast_signature = ""
     chained_dir = project_root / "production" / "video_inputs" / f"episode_{episode_number:03d}"
 
     for shot in shots:
@@ -263,6 +282,7 @@ def run(
             )
             # A skipped shot still yields a last frame for the next shot.
             previous_video_path = existing[0]
+            previous_group_id, previous_cast_signature = _continuity_keys(shot)
             print(f"[SKIP] shot={shot_number:03d} valid_h3_candidate", flush=True)
             continue
 
@@ -282,7 +302,25 @@ def run(
 
         spec = _video_spec(project_root, episode_number, shot)
 
-        if chain_shots and previous_video_path is not None:
+        current_group_id, current_cast = _continuity_keys(shot)
+        # continuity.py plans group_id (scene/flashback segment) and
+        # cast_signature (sorted roster) so that a scene break, flashback or
+        # cast change severs the link between adjacent shots. When continuity
+        # data is present, only chain within the same group and identical cast;
+        # when it is absent (un-planned episode), fall back to unconditional
+        # chaining so legacy behaviour is preserved.
+        has_continuity = bool(current_group_id) or bool(current_cast)
+        continuity_allows = (
+            (current_group_id == previous_group_id and current_cast == previous_cast_signature)
+            if has_continuity
+            else True
+        )
+        should_chain = (
+            chain_shots
+            and previous_video_path is not None
+            and continuity_allows
+        )
+        if should_chain:
             chained_frame = chained_dir / f"shot_{shot_number:03d}_chained.png"
             chained_audio = chained_dir / f"shot_{shot_number:03d}_chained_ref.wav"
             frame_count = normalize_frame_count(round(spec.duration_seconds * 24))
@@ -309,6 +347,13 @@ def run(
                 previous_video_path, chained_audio, seconds=2.0
             ):
                 updates["reference_audio"] = chained_audio
+                # T8's "native" audio_mode synthesises audio from the prompt
+                # and ignores drive_audio. Switch to "remix_source" so the
+                # reference audio conditions the output while the prompt still
+                # drives the new dialogue. "off" mode stays silent and never
+                # sends a reference audio.
+                if not spec.audio_mode_override and spec.native_audio_mode != "off":
+                    updates["audio_mode_override"] = "remix_source"
                 print(
                     f"[CHAIN_AUDIO] shot={shot_number:03d} ref_audio<-shot_prev_tail "
                     f"{previous_video_path.name}",
@@ -316,6 +361,12 @@ def run(
                 )
             if updates:
                 spec = spec.model_copy(update=updates)
+        elif chain_shots and previous_video_path is not None:
+            print(
+                f"[CHAIN_BREAK] shot={shot_number:03d} scene or cast changed; "
+                f"independent first frame",
+                flush=True,
+            )
 
         def progress(percent: int, _message: str, number: int = shot_number) -> None:
             print(f"[PROGRESS] shot={number:03d} percent={percent}", flush=True)
@@ -355,6 +406,7 @@ def run(
         # The most recent candidate's clip feeds the next shot's first frame.
         if batch.clips:
             previous_video_path = batch.clips[-1].video_path
+            previous_group_id, previous_cast_signature = _continuity_keys(shot)
         episode = _read_episode(episode_path)
         shots = sorted(episode.get("shots") or [], key=lambda item: item["shot_number"])
         if max_shots is not None:

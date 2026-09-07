@@ -626,30 +626,72 @@ def build_sdxl_workflow(
         },
     }
     if reference_image and identity_reference:
-        workflow["8"] = {
-            "class_type": "LoadImage",
-            "inputs": {"image": reference_image},
-        }
-        workflow["9"] = {
-            "class_type": "IPAdapterUnifiedLoader",
-            "inputs": {
-                "model": ["1", 0],
-                "preset": "PLUS FACE (portraits)",
-            },
-        }
-        workflow["10"] = {
-            "class_type": "IPAdapter",
-            "inputs": {
-                "model": ["9", 0],
-                "ipadapter": ["9", 1],
-                "image": ["8", 0],
-                "weight": 0.5,
-                "start_at": 0.0,
-                "end_at": 0.65,
-                "weight_type": "prompt is more important",
-            },
-        }
-        workflow["5"]["inputs"]["model"] = ["10", 0]
+        # reference_image may be a comma-separated list of remote image names
+        # so that every named character in a multi-person shot gets a face
+        # identity reference, not just the speaker.
+        image_names = [
+            name.strip() for name in str(reference_image).split(",") if name.strip()
+        ]
+        if len(image_names) <= 1:
+            workflow["8"] = {
+                "class_type": "LoadImage",
+                "inputs": {"image": image_names[0] if image_names else reference_image},
+            }
+            workflow["9"] = {
+                "class_type": "IPAdapterUnifiedLoader",
+                "inputs": {
+                    "model": ["1", 0],
+                    "preset": "PLUS FACE (portraits)",
+                },
+            }
+            workflow["10"] = {
+                "class_type": "IPAdapter",
+                "inputs": {
+                    "model": ["9", 0],
+                    "ipadapter": ["9", 1],
+                    "image": ["8", 0],
+                    "weight": 0.72,
+                    "start_at": 0.0,
+                    "end_at": 0.85,
+                    "weight_type": "linear",
+                },
+            }
+            workflow["5"]["inputs"]["model"] = ["10", 0]
+        else:
+            # Multiple characters: one shared IPAdapter loader, then one
+            # IPAdapter node per portrait chained on the previous model output
+            # so identity embeddings accumulate. Per-portrait weight is scaled
+            # down so the composition is not over-constrained.
+            per_portrait_weight = max(0.35, 0.72 / len(image_names))
+            workflow["9"] = {
+                "class_type": "IPAdapterUnifiedLoader",
+                "inputs": {
+                    "model": ["1", 0],
+                    "preset": "PLUS FACE (portraits)",
+                },
+            }
+            previous_model: list[Any] = ["9", 0]
+            for portrait_index, image_name in enumerate(image_names):
+                load_node = str(80 + portrait_index * 2)
+                adapter_node = str(81 + portrait_index * 2)
+                workflow[load_node] = {
+                    "class_type": "LoadImage",
+                    "inputs": {"image": image_name},
+                }
+                workflow[adapter_node] = {
+                    "class_type": "IPAdapter",
+                    "inputs": {
+                        "model": previous_model,
+                        "ipadapter": ["9", 1],
+                        "image": [load_node, 0],
+                        "weight": per_portrait_weight,
+                        "start_at": 0.0,
+                        "end_at": 0.85,
+                        "weight_type": "linear",
+                    },
+                }
+                previous_model = [adapter_node, 0]
+            workflow["5"]["inputs"]["model"] = previous_model
     elif reference_image:
         workflow["8"] = {
             "class_type": "LoadImage",

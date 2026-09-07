@@ -160,7 +160,7 @@ def build_sdxl_workflow(
     filename_prefix: str = "novel2anime",
     checkpoint: str = "majicmixRealistic_v7.safetensors",
     ipadapter_image: str = "",
-    ipadapter_weight: float = 0.8,
+    ipadapter_weight: float = 0.72,
 ) -> dict[str, Any]:
     """构建 ComfyUI txt2img workflow JSON（SDXL/SD1.5 通用）。可选 IPAdapter。"""
     if seed is None:
@@ -221,10 +221,10 @@ def build_sdxl_workflow(
                 "ipadapter": ["9", 0],
                 "image": ["8", 0],
                 "weight": ipadapter_weight,
-                "weight_type": "composition",
+                "weight_type": "linear",
                 "combine_embeds": "concat",
                 "start_at": 0.0,
-                "end_at": 1.0,
+                "end_at": 0.85,
                 "embeds_scaling": "K+V",
             },
             "class_type": "IPAdapterAdvanced",

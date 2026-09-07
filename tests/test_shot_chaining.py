@@ -97,7 +97,8 @@ def test_extract_last_audio_uses_sseof_and_mono(tmp_path, monkeypatch):
 
     ok = service.extract_last_audio(source, destination, seconds=2.0)
     assert ok is True
-    args = captured[0]
+    # _probe_duration calls _run first; the extract command is the last call.
+    args = captured[-1]
     assert "-sseof" in args
     assert "-2.0" in args
     assert "-vn" in args  # drop video

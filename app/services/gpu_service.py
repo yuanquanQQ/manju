@@ -36,6 +36,7 @@ from app.services.video_service import (
     VideoBatchResult,
     VideoClipResult,
     VideoRenderService,
+    normalize_frame_count,
 )
 
 
@@ -142,6 +143,55 @@ def _resolve_cast_reference(
     if not candidate.is_relative_to(project_root) or not candidate.is_file():
         return None
     return cast_name, candidate
+
+
+def _cast_reference_characters(
+    shot: dict[str, Any], *, max_count: int = 3
+) -> list[str]:
+    """Choose up to ``max_count`` cast portraits that best anchor this shot.
+
+    A single portrait cannot lock every face in a multi-character frame, so
+    return up to ``max_count`` named characters ordered by on-screen relevance:
+    the speaking character first, then the rest in storyboard order.
+    """
+    names = _shot_character_names(shot)
+    if not names:
+        return []
+    audio = shot.get("audio_generation")
+    audio = audio if isinstance(audio, dict) else {}
+    speaker = str(audio.get("speaker") or "").strip()
+    ordered: list[str] = []
+    if speaker in names:
+        ordered.append(speaker)
+    for name in names:
+        if name not in ordered:
+            ordered.append(name)
+    return ordered[:max_count]
+
+
+def _resolve_cast_references(
+    project_root: Path,
+    cast_selections: dict[str, str],
+    shot: dict[str, Any],
+    *,
+    max_count: int = 3,
+) -> list[tuple[str, Path]]:
+    """Resolve cast portraits for up to ``max_count`` characters in this shot.
+
+    Returns ``(name, project_path)`` pairs for each character that has an
+    approved cast reference, ordered by on-screen relevance (speaker first).
+    """
+    cast_names = _cast_reference_characters(shot, max_count=max_count)
+    results: list[tuple[str, Path]] = []
+    for name in cast_names:
+        configured = cast_selections.get(name)
+        if not configured:
+            continue
+        candidate = (project_root / configured).resolve()
+        if not candidate.is_relative_to(project_root) or not candidate.is_file():
+            continue
+        results.append((name, candidate))
+    return results
 
 
 class GpuServerService:
@@ -993,25 +1043,35 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                         continuity["reference_denoise"] = 0.68
                         shot["continuity_plan"] = continuity
                         continue
-                    cast_reference = _resolve_cast_reference(
+                    cast_references = _resolve_cast_references(
                         project_root,
                         cast_selections,
                         shot,
                     )
-                    if cast_reference:
-                        cast_name, reference_path = cast_reference
-                        reference_filename = (
-                            f"cast_{shot_number:03d}{reference_path.suffix.lower()}"
-                        )
-                        remote_reference = f"{remote_reference_dir}/{reference_filename}"
-                        sftp.put(str(reference_path), remote_reference)
+                    if cast_references:
+                        remote_names: list[str] = []
+                        primary_name = cast_references[0][0]
+                        for idx, (cast_name, reference_path) in enumerate(
+                            cast_references
+                        ):
+                            reference_filename = (
+                                f"cast_{shot_number:03d}_{idx + 1}"
+                                f"{reference_path.suffix.lower()}"
+                            )
+                            remote_reference = (
+                                f"{remote_reference_dir}/{reference_filename}"
+                            )
+                            sftp.put(str(reference_path), remote_reference)
+                            remote_names.append(
+                                f"{remote_reference_name}/{reference_filename}"
+                            )
                         continuity["reference_mode"] = "cast_selection"
                         continuity["reference_shot_number"] = 0
-                        continuity["reference_image"] = (
-                            f"{remote_reference_name}/{reference_filename}"
-                        )
+                        # Comma-separated so the image workflow can attach one
+                        # IPAdapter per portrait for multi-character frames.
+                        continuity["reference_image"] = ",".join(remote_names)
                         continuity["reference_denoise"] = CAST_REFERENCE_DENOISE
-                        continuity["cast_reference_character"] = cast_name
+                        continuity["cast_reference_character"] = primary_name
                         shot["continuity_plan"] = continuity
                         continue
                     reference_number = int(continuity.get("reference_shot_number") or 0)
@@ -1146,8 +1206,18 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
         *,
         progress_callback: Callable[[int, str], None] | None = None,
         clip_callback: Callable[[VideoClipResult], None] | None = None,
+        chain_shots: bool = False,
+        shot_continuity: list[dict[str, Any]] | None = None,
     ) -> VideoBatchResult:
-        """Run MiniMax H3 FL2VA with native stereo audio on remote ComfyUI."""
+        """Run MiniMax H3 FL2VA with native stereo audio on remote ComfyUI.
+
+        When ``chain_shots`` is True, shot N's first frame is replaced with shot
+        N-1's last frame (pixel-exact boundary) and the trailing audio is fed as
+        ``reference_audio`` so voice timbre carries across the boundary. The
+        optional ``shot_continuity`` list (parallel to ``specs``) supplies
+        ``group_id`` / ``cast_signature`` per shot so chaining is skipped across
+        scene breaks, flashbacks or cast changes — mirroring the script path.
+        """
 
         if not specs:
             raise ValueError("请至少选择一个镜头")
@@ -1221,7 +1291,56 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
 
             total_candidates = sum(spec.candidate_count for spec in specs)
             completed_candidates = 0
+            # Shot chaining state (only active when chain_shots=True).
+            chain_video_service = VideoRenderService() if chain_shots else None
+            chain_dir = root / "production" / "video_inputs" / f"episode_{specs[0].episode_number:03d}" if chain_shots else None
+            if chain_dir:
+                chain_dir.mkdir(parents=True, exist_ok=True)
+            previous_chain_video: Path | None = None
+            previous_chain_group = ""
+            previous_chain_cast = ""
             for shot_index, spec in enumerate(specs, start=1):
+                # Apply continuity-gated shot chaining before uploading: replace
+                # source_image with the previous clip's last frame and attach
+                # the trailing audio as reference_audio.
+                if chain_shots and previous_chain_video is not None and chain_video_service and chain_dir:
+                    plan = (
+                        shot_continuity[shot_index - 1]
+                        if shot_continuity and shot_index - 1 < len(shot_continuity)
+                        else {}
+                    )
+                    plan = plan if isinstance(plan, dict) else {}
+                    cur_group = str(plan.get("group_id") or "")
+                    cur_cast = str(plan.get("cast_signature") or "")
+                    has_continuity = bool(cur_group) or bool(cur_cast)
+                    # Only chain within the same scene group and identical cast
+                    # when continuity data is present; otherwise chain
+                    # unconditionally (legacy behaviour for un-planned episodes).
+                    continuity_allows = (
+                        (cur_group == previous_chain_group and cur_cast == previous_chain_cast)
+                        if has_continuity
+                        else True
+                    )
+                    if continuity_allows:
+                        chained_frame = chain_dir / f"shot_{spec.shot_number:03d}_chained.png"
+                        chained_audio = chain_dir / f"shot_{spec.shot_number:03d}_chained_ref.wav"
+                        frame_count = normalize_frame_count(round(spec.duration_seconds * 24))
+                        chain_updates: dict[str, Any] = {}
+                        if chain_video_service.extract_last_frame(
+                            previous_chain_video, chained_frame, frame_count=frame_count
+                        ):
+                            chain_updates["source_image"] = chained_frame
+                            chain_updates["chained_from_previous"] = True
+                        if chain_video_service.extract_last_audio(
+                            previous_chain_video, chained_audio, seconds=2.0
+                        ):
+                            chain_updates["reference_audio"] = chained_audio
+                            if not spec.audio_mode_override and spec.native_audio_mode != "off":
+                                chain_updates["audio_mode_override"] = "remix_source"
+                        if chain_updates:
+                            spec = spec.model_copy(update=chain_updates)
+                    # else: scene/cast changed → independent first frame
+                source = self._project_file(root, spec.source_image, "起始帧")
                 source = self._project_file(root, spec.source_image, "起始帧")
                 end_source = (
                     self._project_file(root, spec.end_image, "结束帧") if spec.end_image else None
@@ -1256,7 +1375,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                     sftp.put(str(source), remote_source)
                     if end_source:
                         sftp.put(str(end_source), remote_end)
-                    if reference_audio_source:
+                    if reference_audio_source and spec.native_audio_mode != "off":
                         sftp.put(str(reference_audio_source), remote_reference_audio)
                     with sftp.file(remote_prompt, "wb") as prompt_file:
                         prompt_file.write(self._h3_positive_prompt(spec).encode("utf-8"))
@@ -1273,7 +1392,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                 ]
                 if remote_end:
                     command_parts.extend(["--end-image", shlex.quote(remote_end)])
-                if remote_reference_audio:
+                if remote_reference_audio and spec.native_audio_mode != "off":
                     command_parts.extend(
                         ["--reference-audio", shlex.quote(remote_reference_audio)]
                     )
@@ -1497,6 +1616,17 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                     sftp.close()
                 if not shot_results:
                     raise RuntimeError(f"H3 镜头 {spec.shot_number:02d} 完成但没有视频输出")
+                # Track the last generated clip for the next shot's chain.
+                if chain_shots and shot_results:
+                    previous_chain_video = shot_results[-1].video_path
+                    plan = (
+                        shot_continuity[shot_index - 1]
+                        if shot_continuity and shot_index - 1 < len(shot_continuity)
+                        else {}
+                    )
+                    plan = plan if isinstance(plan, dict) else {}
+                    previous_chain_group = str(plan.get("group_id") or "")
+                    previous_chain_cast = str(plan.get("cast_signature") or "")
                 heartbeat_job(job.id, shot_index / len(specs) * 0.95)
 
             elapsed = time.monotonic() - started
@@ -1682,11 +1812,13 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
         )
         if spec.chained_from_previous:
             opening = (
-                "Continue seamlessly from the previous shot's final frame; "
-                "preserve the inherited pose, screen direction, costume and "
-                "momentum into the first boundary, then let natural breathing "
-                f"and weight shift carry the action forward for approximately "
-                f"{handle_seconds:.2f}s."
+                "Continue seamlessly from the previous shot's final frame. "
+                "First hold and settle the inherited pose, screen direction "
+                "and costume for the opening boundary so the transition reads "
+                "as continuous; only after the settled frame is established, "
+                "let natural breathing and weight shift initiate the new "
+                f"action over approximately {handle_seconds:.2f}s. Do not carry "
+                "over mid-motion momentum from the previous shot."
             )
         else:
             opening = (

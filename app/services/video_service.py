@@ -119,6 +119,17 @@ class EpisodeComposeResult:
     elapsed_seconds: float
 
 
+def normalize_frame_count(value: int) -> int:
+    """Round up to MiniMax H3's 17k+5 frame grid.
+
+    Mirrors the workflow-side helper so the caller can compute the exact frame
+    count the remote sampler will use, which is needed to extract the true last
+    frame for shot chaining.
+    """
+    requested = max(5, int(value))
+    return requested + (5 - requested % 17) % 17
+
+
 class VideoRenderService:
     """Generate standardized MP4 clips from reviewed storyboard keyframes."""
 
@@ -914,8 +925,13 @@ class VideoRenderService:
             return False
         destination = Path(destination).resolve()
         destination.parent.mkdir(parents=True, exist_ok=True)
-        # -sseof seeks from end of file; clamp the tail length to the source
-        # duration so very short clips do not produce empty output.
+        # Clamp the tail length to the source duration so very short clips do
+        # not produce empty output. _probe_duration returns None when the
+        # duration cannot be parsed; fall back to the requested length.
+        tail = max(0.1, seconds)
+        source_duration = self._probe_duration(source) or 0.0
+        if source_duration > 0:
+            tail = min(tail, max(0.1, source_duration - 0.05))
         command = [
             str(self.ffmpeg_executable),
             "-y",
@@ -923,7 +939,7 @@ class VideoRenderService:
             "-loglevel",
             "error",
             "-sseof",
-            f"-{max(0.1, seconds)}",
+            f"-{tail}",
             "-i",
             str(source),
             "-vn",
@@ -934,14 +950,18 @@ class VideoRenderService:
             "-acodec",
             "pcm_s16le",
             "-t",
-            f"{max(0.1, seconds)}",
+            f"{tail}",
             str(destination),
         ]
         try:
             self._run(command, timeout=120)
         except Exception:
             return False
-        return destination.is_file()
+        # Guard against ffmpeg exiting cleanly but writing an empty file (e.g.
+        # a container with no audio stream, or a seek before the file start).
+        if not destination.is_file() or destination.stat().st_size == 0:
+            return False
+        return True
 
     @staticmethod
     def _motion_filter(
