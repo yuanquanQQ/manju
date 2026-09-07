@@ -214,7 +214,7 @@ printf '%s\n%s\n%s\n%s\n%s\n' "$installed" "$installing" "$gpu" "$size" "$import
         target_character: str = "",
         face_reference: Path | None = None,
         face_selection_mode: str = "auto_single_face",
-        minimum_face_similarity: float = 0.18,
+        minimum_face_similarity: float = 0.35,
         restore_comfy: bool = True,
         progress_callback: Callable[[int, str], None] | None = None,
     ) -> LatentSyncResult:

@@ -85,6 +85,7 @@ from app.services.image_models import (
     DEFAULT_IMAGE_MODEL_ID,
     IMAGE_MODEL_PRESETS,
 )
+from app.services.job_service import recover_interrupted_jobs
 from app.services.latentsync_service import (
     LatentSyncRemoteService,
     LatentSyncResult,
@@ -2873,6 +2874,13 @@ class MainWindow(QMainWindow):
         self.episodes: list[EpisodeSnapshot] = []
         self.last_gpu_status = GpuStatus()
 
+        # Background recovery: periodically detect jobs whose worker process
+        # died (no heartbeat) and pause them so they can be resumed instead of
+        # being stuck in RUNNING forever.
+        self._recovery_timer = QTimer(self)
+        self._recovery_timer.timeout.connect(self._recover_stale_jobs)
+        self._recovery_timer.start(60_000)  # check every 60 s
+
         root = QWidget()
         root.setObjectName("appRoot")
         self.setCentralWidget(root)
@@ -4691,6 +4699,7 @@ class MainWindow(QMainWindow):
                         group_specs,
                         progress_callback=group_progress,
                         clip_callback=persist_completed_clip,
+                        chain_shots=True,
                     )
                 batches.append(batch)
             return VideoBatchResult(
@@ -6077,6 +6086,20 @@ class MainWindow(QMainWindow):
         dialog.setText(detail.splitlines()[0] if detail else title)
         dialog.setDetailedText(detail)
         dialog.exec()
+
+    def _recover_stale_jobs(self) -> None:
+        """Pause jobs whose worker process lost heartbeat (crash, kill, etc.)."""
+        try:
+            recovered = recover_interrupted_jobs(
+                stale_after_seconds=settings.pipeline_stale_after_seconds
+            )
+            if recovered:
+                self.append_log(
+                    f"自动恢复：{len(recovered)} 个失心跳任务已暂停，可在任务页恢复",
+                    level="warn",
+                )
+        except Exception:
+            pass  # Recovery is best-effort; never crash the UI.
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if any(task.isRunning() for task in self.tasks):

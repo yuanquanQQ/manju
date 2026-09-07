@@ -195,8 +195,17 @@ def _resolve_cast_references(
 
 
 class GpuServerService:
-    remote_project_root = "/root/autodl-tmp/manju"
-    remote_comfy_root = "/root/autodl-tmp/ComfyUI"
+    @property
+    def remote_project_root(self) -> str:
+        return settings.gpu_remote_project_root
+
+    @property
+    def remote_comfy_root(self) -> str:
+        return settings.gpu_remote_comfy_root
+
+    @property
+    def remote_python(self) -> str:
+        return settings.gpu_remote_python
 
     def check_status(self, config: GpuConnection) -> GpuStatus:
         status = GpuStatus()
@@ -207,11 +216,11 @@ class GpuServerService:
             return status
 
         status.ssh_online = True
-        command = r"""
+        command = f"""
 gpu=$(nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1)
-disk=$(df -h /root/autodl-tmp 2>/dev/null | awk 'NR==2 {print $4}')
+disk=$(df -h {self.remote_comfy_root}/.. 2>/dev/null | awk 'NR==2 {{print $4}}')
 if curl -fsS --max-time 3 http://127.0.0.1:8188/system_stats >/dev/null 2>&1; then comfy=1; else comfy=0; fi
-models=/root/autodl-tmp/ComfyUI/models
+models={self.remote_comfy_root}/models
 if [ -f "$models/diffusion_models/flux1-krea-dev_fp8_scaled.safetensors" ] &&
    [ -f "$models/text_encoders/clip_l.safetensors" ] &&
    [ -f "$models/text_encoders/t5xxl_fp8_e4m3fn.safetensors" ] &&
@@ -628,7 +637,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
             sftp.close()
 
             command_parts = [
-                "/root/miniconda3/bin/python",
+                self.remote_python,
                 shlex.quote(remote_workflow),
                 "--episode",
                 shlex.quote(remote_episode),
@@ -686,6 +695,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                         )
             finally:
                 sftp.close()
+            self._exec(client, f"rm -rf -- {shlex.quote(remote_output_dir)}", timeout=30)
 
             manifest_path = local_output_dir / "manifest.json"
             manifest = (
@@ -791,7 +801,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
 
             command = " ".join(
                 (
-                    "/root/miniconda3/bin/python",
+                    self.remote_python,
                     shlex.quote(remote_revision),
                     "--source-image",
                     shlex.quote(comfy_source),
@@ -849,6 +859,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                         )
             finally:
                 sftp.close()
+            self._exec(client, f"rm -rf -- {shlex.quote(remote_output_dir)}", timeout=30)
 
             manifest_path = local_output_dir / "manifest.json"
             manifest = (
@@ -1100,7 +1111,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                 sftp.close()
 
             command_parts = [
-                "/root/miniconda3/bin/python",
+                self.remote_python,
                 shlex.quote(remote_shot_workflow),
                 "--episode",
                 shlex.quote(remote_episode),
@@ -1162,6 +1173,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                         )
             finally:
                 sftp.close()
+            self._exec(client, f"rm -rf -- {shlex.quote(remote_output_dir)}", timeout=30)
 
             manifest_path = local_output_dir / "manifest.json"
             manifest = (
@@ -1385,7 +1397,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                 frame_count = round(spec.duration_seconds * 24)
                 seed = int(time.time_ns() % 2_147_000_000) + spec.shot_number * 100
                 command_parts = [
-                    "/root/miniconda3/bin/python",
+                    self.remote_python,
                     shlex.quote(remote_workflow),
                     "--source-image",
                     shlex.quote(remote_source),
@@ -1614,6 +1626,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                     results.extend(shot_results)
                 finally:
                     sftp.close()
+                self._exec(client, f"rm -rf -- {shlex.quote(remote_output_dir)}", timeout=30)
                 if not shot_results:
                     raise RuntimeError(f"H3 镜头 {spec.shot_number:02d} 完成但没有视频输出")
                 # Track the last generated clip for the next shot's chain.
@@ -1657,8 +1670,8 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                 client.close()
 
     def _ensure_remote_h3(self, client: paramiko.SSHClient) -> None:
-        command = r"""
-models=/root/autodl-tmp/ComfyUI/models
+        command = f"""
+models={self.remote_comfy_root}/models
 test -f "$models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
 test -f "$models/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 test -f "$models/vae/minimax_h3_video_vae_fp16.safetensors"
@@ -1695,8 +1708,8 @@ printf '%s' "$object_info" | grep -q '"MiniMaxH3OutputTrimT8"'
             ) from exc
 
     def _ensure_remote_kontext(self, client: paramiko.SSHClient) -> None:
-        command = r"""
-models=/root/autodl-tmp/ComfyUI/models
+        command = f"""
+models={self.remote_comfy_root}/models
 test -f "$models/diffusion_models/flux1-dev-kontext_fp8_scaled.safetensors"
 test -f "$models/text_encoders/clip_l.safetensors"
 test -f "$models/text_encoders/t5xxl_fp8_e4m3fn.safetensors"
@@ -1953,6 +1966,24 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
         # direct service calls are as safe as the desktop workflow.
         self._stop_remote_cosyvoice(client)
         if self._probe_remote_comfy(client):
+            # Check for stale ComfyUI queue entries from a previous crashed
+            # session. If the queue is empty the server is healthy; otherwise
+            # cancel pending items so the new job does not wait behind orphans.
+            try:
+                queue_raw = self._exec(
+                    client,
+                    "curl -fsS --max-time 5 http://127.0.0.1:8188/queue",
+                    timeout=10,
+                )
+                queue = json.loads(queue_raw) if queue_raw else {}
+                if queue.get("queue_pending"):
+                    self._exec(
+                        client,
+                        'curl -fsS -X POST http://127.0.0.1:8188/queue --data \'{"clear":true}\'',
+                        timeout=10,
+                    )
+            except Exception:
+                pass
             return
 
         process_probe = (
@@ -1965,15 +1996,15 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
                 time.sleep(2)
             tail = self._exec(
                 client,
-                "tail -60 /root/autodl-tmp/comfyui_krea.log 2>/dev/null || true",
+                f"tail -60 {self.remote_comfy_root}/../comfyui_krea.log 2>/dev/null || true",
                 timeout=10,
             )
             raise RuntimeError(f"ComfyUI 进程存在但未能就绪\n{tail}".strip())
 
-        command = "cd /root/autodl-tmp/ComfyUI && setsid -f /bin/bash -c " + shlex.quote(
-            "exec /root/miniconda3/bin/python main.py "
+        command = f"cd {self.remote_comfy_root} && setsid -f /bin/bash -c " + shlex.quote(
+            f"exec {self.remote_python} main.py "
             "--listen 127.0.0.1 --port 8188 --cache-none "
-            "> /root/autodl-tmp/comfyui_krea.log 2>&1"
+            f"> {self.remote_comfy_root}/../comfyui_krea.log 2>&1"
         )
         self._exec(client, command, timeout=8)
         for _ in range(45):
@@ -1982,7 +2013,7 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
             time.sleep(2)
         tail = self._exec(
             client,
-            "tail -60 /root/autodl-tmp/comfyui_krea.log 2>/dev/null || true",
+            f"tail -60 {self.remote_comfy_root}/../comfyui_krea.log 2>/dev/null || true",
             timeout=10,
         )
         raise RuntimeError(f"ComfyUI 启动失败\n{tail}".strip())

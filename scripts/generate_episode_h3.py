@@ -181,6 +181,7 @@ def _video_spec(project_root: Path, episode_number: int, shot: dict) -> VideoRen
         width=832,
         height=480,
         engine_profile="minimax_h3_fl2va",
+        steps=int(video.get("steps") or 8),
         audio_mode_override=str(video.get("audio_mode_override") or ""),
         reference_audio=(
             (project_root / str(video["reference_audio"])).resolve()
@@ -458,7 +459,19 @@ def run(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", default="jueshi")
-    parser.add_argument("--episode", type=int, default=1)
+    parser.add_argument("--episode", type=int, default=1, help="单集生成")
+    parser.add_argument(
+        "--episode-start",
+        type=int,
+        default=0,
+        help="批量起始集号（含）；设置后覆盖 --episode",
+    )
+    parser.add_argument(
+        "--episode-end",
+        type=int,
+        default=0,
+        help="批量结束集号（含）；需配合 --episode-start",
+    )
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
     parser.add_argument(
         "--max-shots",
@@ -473,13 +486,19 @@ def main() -> None:
         help="镜头 N 首帧 = 镜头 N-1 末帧(默认开；--no-chain-shots 退回独立首帧)",
     )
     args = parser.parse_args()
-    run(
-        args.project,
-        args.episode,
-        args.workspace.resolve(),
-        max_shots=args.max_shots or None,
-        chain_shots=args.chain_shots,
-    )
+    if args.episode_start > 0:
+        episodes = range(args.episode_start, (args.episode_end or args.episode_start) + 1)
+    else:
+        episodes = [args.episode]
+    for ep in episodes:
+        print(f"\n=== Episode {ep:03d} ===", flush=True)
+        run(
+            args.project,
+            ep,
+            args.workspace.resolve(),
+            max_shots=args.max_shots or None,
+            chain_shots=args.chain_shots,
+        )
 
 
 if __name__ == "__main__":

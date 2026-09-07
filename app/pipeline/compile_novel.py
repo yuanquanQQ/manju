@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from app.adapters.llm import OpenAICompatibleLLM, StructuredLLM
@@ -102,13 +103,10 @@ def run_compile_novel(
     }
 
     try:
+        # First pass: reuse cached analyses and collect chapters that need
+        # fresh analysis, so the expensive LLM calls can run concurrently.
+        pending_chapters = []
         for index, chapter in enumerate(chapters, start=1):
-            if progress_callback:
-                progress_callback(
-                    index - 1,
-                    len(chapters),
-                    f"正在分析 {chapter.title}",
-                )
             state = get_job(job.id)
             if state.cancel_requested:
                 transition_job(job.id, JobStatus.CANCELED, result=stats)
@@ -129,26 +127,21 @@ def run_compile_novel(
                     stats["reused"] += 1
                     heartbeat_job(job.id, index / len(chapters))
                     continue
+            pending_chapters.append(chapter)
 
+        # Second pass: analyze the remaining chapters, optionally in parallel.
+        concurrency = max(1, settings.extract_concurrency)
+        completed_count = stats["reused"]
+
+        def _analyze_one(chapter):
+            """Analyze a single chapter and persist results."""
             try:
                 analysis = analyze_chapter(chapter, llm=client)
                 save_analysis(analysis)
-                stats["analyzed"] += 1
-                # 即时输出分析摘要
-                mention_count = len(analysis.mentions) if analysis.mentions else 0
-                event_count = len(analysis.events) if analysis.events else 0
-                dialogue_count = len(analysis.dialogues) if analysis.dialogues else 0
-                summary_preview = analysis.summary[:80].replace("\n", " ")
-                log.info(
-                    f"{chapter.chapter_id} ({chapter.title}) 分析完成 | "
-                    f"实体={mention_count} 事件={event_count} 对白={dialogue_count} | "
-                    f"{summary_preview}..."
-                )
-                # 保存 JSON 文件
                 if analysis_dir:
                     json_path = analysis_dir / f"{chapter.chapter_id}.json"
                     atomic_write_json(json_path, analysis.model_dump(mode="json"))
-                    log.info(f"  分析 JSON 已保存: {json_path}")
+                return chapter, analysis, None
             except ChapterAnalysisError as exc:
                 save_analysis_failure(
                     chapter,
@@ -156,16 +149,74 @@ def run_compile_novel(
                     prompt_version=PROMPT_VERSION,
                     error_message=str(exc),
                 )
-                stats["failed"] += 1
-                stats["failed_chapters"].append(chapter.chapter_id)
-                log.error(str(exc))
-            heartbeat_job(job.id, index / len(chapters))
-            if progress_callback:
-                progress_callback(
-                    index,
-                    len(chapters),
-                    f"已分析 {index}/{len(chapters)} 章",
-                )
+                return chapter, None, exc
+
+        if concurrency > 1 and len(pending_chapters) > 1:
+            with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                futures = {pool.submit(_analyze_one, ch): ch for ch in pending_chapters}
+                for future in as_completed(futures):
+                    chapter = futures[future]
+                    completed_count += 1
+                    heartbeat_job(job.id, completed_count / len(chapters))
+                    if progress_callback:
+                        progress_callback(
+                            completed_count,
+                            len(chapters),
+                            f"已分析 {completed_count}/{len(chapters)} 章",
+                        )
+                    chapter, analysis, exc = future.result()
+                    if exc is not None:
+                        stats["failed"] += 1
+                        stats["failed_chapters"].append(chapter.chapter_id)
+                        log.error(str(exc))
+                    else:
+                        stats["analyzed"] += 1
+                        mention_count = len(analysis.mentions) if analysis.mentions else 0
+                        event_count = len(analysis.events) if analysis.events else 0
+                        dialogue_count = len(analysis.dialogues) if analysis.dialogues else 0
+                        summary_preview = analysis.summary[:80].replace("\n", " ")
+                        log.info(
+                            f"{chapter.chapter_id} ({chapter.title}) 分析完成 | "
+                            f"实体={mention_count} 事件={event_count} 对白={dialogue_count} | "
+                            f"{summary_preview}..."
+                        )
+                        log.info(f"  分析 JSON 已保存: {analysis_dir}/{chapter.chapter_id}.json")
+        else:
+            for chapter in pending_chapters:
+                state = get_job(job.id)
+                if state.cancel_requested:
+                    transition_job(job.id, JobStatus.CANCELED, result=stats)
+                    stats["status"] = JobStatus.CANCELED.value
+                    return stats
+                if state.pause_requested:
+                    transition_job(job.id, JobStatus.PAUSED, result=stats)
+                    stats["status"] = JobStatus.PAUSED.value
+                    return stats
+                completed_count += 1
+                chapter, analysis, exc = _analyze_one(chapter)
+                if exc is not None:
+                    stats["failed"] += 1
+                    stats["failed_chapters"].append(chapter.chapter_id)
+                    log.error(str(exc))
+                else:
+                    stats["analyzed"] += 1
+                    mention_count = len(analysis.mentions) if analysis.mentions else 0
+                    event_count = len(analysis.events) if analysis.events else 0
+                    dialogue_count = len(analysis.dialogues) if analysis.dialogues else 0
+                    summary_preview = analysis.summary[:80].replace("\n", " ")
+                    log.info(
+                        f"{chapter.chapter_id} ({chapter.title}) 分析完成 | "
+                        f"实体={mention_count} 事件={event_count} 对白={dialogue_count} | "
+                        f"{summary_preview}..."
+                    )
+                    log.info(f"  分析 JSON 已保存: {analysis_dir}/{chapter.chapter_id}.json")
+                heartbeat_job(job.id, completed_count / len(chapters))
+                if progress_callback:
+                    progress_callback(
+                        completed_count,
+                        len(chapters),
+                        f"已分析 {completed_count}/{len(chapters)} 章",
+                    )
 
         if stats["failed"]:
             stats["status"] = JobStatus.FAILED.value

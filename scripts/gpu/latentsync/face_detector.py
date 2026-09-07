@@ -39,7 +39,7 @@ class FaceDetector:
         self.reference_embedding: np.ndarray | None = None
         self.previous_bbox: np.ndarray | None = None
         self.minimum_similarity = float(
-            os.environ.get("LATENTSYNC_FACE_MIN_SIMILARITY", "0.18")
+            os.environ.get("LATENTSYNC_FACE_MIN_SIMILARITY", "0.35")
         )
         if reference:
             self.reference_embedding = self._load_reference(Path(reference))

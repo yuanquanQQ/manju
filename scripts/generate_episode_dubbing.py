@@ -142,16 +142,18 @@ def main() -> int:
         / f"episode_{episode.number:03d}"
     )
     project_root = projects.projects_dir / args.project
+    skipped_shots: list[int] = []
     for shot in episode.shots:
         text = shot.dialogue.strip()
         if shot.audio_mode == "auto_narration" and not text:
             text = shot.description.strip()
-        if (
-            (not text and shot.audio_mode != "mute")
-            or shot.video_path is None
-            or not shot.video_path.is_file()
-        ):
+        if shot.video_path is None or not shot.video_path.is_file():
+            skipped_shots.append(shot.number)
             continue
+        if not text and shot.audio_mode != "mute":
+            # Non-mute shot without dialogue text: fill with silence so the
+            # shot stays on the timeline instead of vanishing from the cut.
+            text = ""
         prepared_audio = (
             shot.audio_path
             if shot.lip_sync_status == "succeeded"
@@ -215,6 +217,12 @@ def main() -> int:
         progress_callback=progress,
         visible_ai_label=args.ai_label,
     )
+    if skipped_shots:
+        print(
+            f"WARNING: {len(skipped_shots)} shot(s) skipped (no video file): "
+            f"{skipped_shots}",
+            flush=True,
+        )
     for line in result.lines:
         projects.save_shot_audio_result(
             args.project,

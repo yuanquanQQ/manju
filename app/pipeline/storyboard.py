@@ -21,6 +21,32 @@ from app.core.logger import logger
 from app.domain.storyboard import Episode
 
 
+def _collect_fingerprints_from_episodes(
+    output_dir: Path, *, exclude: int = 0
+) -> dict[str, str]:
+    """Scan all episode files for the most recent character fingerprints.
+
+    Fingerprints are passed from episode to episode so the same character keeps
+    the same identity lock. When episodes are generated out of order the chain
+    breaks; this fallback reads fingerprints from every existing episode file
+    (excluding the one being generated) so the identity is still inherited.
+    """
+    collected: dict[str, str] = {}
+    for episode_file in sorted(output_dir.glob("episode_*.json")):
+        try:
+            data = json.loads(episode_file.read_text(encoding="utf-8-sig"))
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        fingerprints = data.get("character_visual_fingerprints")
+        if isinstance(fingerprints, dict):
+            for name, value in fingerprints.items():
+                if isinstance(name, str) and isinstance(value, str) and value:
+                    collected[name] = value
+    return collected
+
+
 def generate_storyboard(
     project_root: str | Path,
     *,
@@ -77,6 +103,21 @@ def generate_storyboard(
                 )
                 if isinstance(loaded, dict):
                     existing = loaded
+            # When episodes are generated out of order (e.g. episode 10 before
+            # 5), the fingerprint chain breaks because fingerprints are only
+            # read from the same episode file. Fall back to scanning all
+            # existing episode files for the most recent fingerprints.
+            existing_fingerprints = (
+                dict(existing["character_visual_fingerprints"])
+                if isinstance(
+                    existing.get("character_visual_fingerprints"), dict
+                )
+                else {}
+            )
+            if not existing_fingerprints:
+                existing_fingerprints = _collect_fingerprints_from_episodes(
+                    output_dir, exclude=chapter.order
+                )
             episode = direct_chapter(
                 analysis,
                 llm=client,
@@ -88,14 +129,7 @@ def generate_storyboard(
                     if isinstance(existing.get("character_profiles"), dict)
                     else {}
                 ),
-                character_visual_fingerprints=(
-                    dict(existing["character_visual_fingerprints"])
-                    if isinstance(
-                        existing.get("character_visual_fingerprints"),
-                        dict,
-                    )
-                    else {}
-                ),
+                character_visual_fingerprints=existing_fingerprints,
                 character_styles=(
                     dict(existing["character_styles"])
                     if isinstance(existing.get("character_styles"), dict)

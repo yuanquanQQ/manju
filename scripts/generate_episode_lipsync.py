@@ -22,20 +22,31 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", required=True)
     parser.add_argument("--episode", type=int, required=True)
+    parser.add_argument(
+        "--episode-start",
+        type=int,
+        default=0,
+        help="批量起始集号（含）；设置后覆盖 --episode",
+    )
+    parser.add_argument(
+        "--episode-end",
+        type=int,
+        default=0,
+        help="批量结束集号（含）；需配合 --episode-start",
+    )
     parser.add_argument("--shot", type=int, action="append", dest="shots")
-    parser.add_argument("--minimum-face-similarity", type=float, default=0.18)
+    parser.add_argument("--minimum-face-similarity", type=float, default=0.35)
     parser.add_argument("--regenerate-completed", action="store_true")
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
-    projects = DesktopProjectService()
-    project_root = (projects.projects_dir / args.project).resolve()
+def _run_episode(
+    args, projects, project_root, episode_number: int
+) -> int:
     planner = LipSyncBatchPlanner()
     plan = planner.plan(
         project_root,
-        args.episode,
+        episode_number,
         regenerate_completed=args.regenerate_completed,
     )
     wanted = set(args.shots or [item.shot_number for item in plan.ready])
@@ -81,7 +92,7 @@ def main() -> int:
                         f"shot {item.shot_number:02d} requests {item.tts_engine}."
                     )
                 spec = DubbingLineSpec(
-                    episode_number=args.episode,
+                    episode_number=episode_number,
                     shot_number=item.shot_number,
                     source_video=item.source_video,
                     mode="dialogue",
@@ -102,7 +113,7 @@ def main() -> int:
                     project_root
                     / "production"
                     / "audio"
-                    / f"episode_{args.episode:03d}"
+                    / f"episode_{episode_number:03d}"
                     / (
                         f"shot_{item.shot_number:03d}_lipsync_batch_"
                         f"{datetime.now():%Y%m%d_%H%M%S}.mp3"
@@ -113,7 +124,7 @@ def main() -> int:
                 result = latentsync.synchronize(
                     config,
                     project_root,
-                    episode_number=args.episode,
+                    episode_number=episode_number,
                     shot_number=item.shot_number,
                     source_video=item.source_video,
                     audio_path=generated_audio,
@@ -151,7 +162,7 @@ def main() -> int:
                 detail = str(exc)
                 projects.save_lip_sync_failure(
                     args.project,
-                    args.episode,
+                    episode_number,
                     item.shot_number,
                     detail,
                 )
@@ -170,6 +181,23 @@ def main() -> int:
     print(f"FAILED_SHOTS={failed}", flush=True)
     print("PROGRESS=100 Lip-sync batch finished", flush=True)
     return 1 if failed else 0
+
+
+def main() -> int:
+    args = parse_args()
+    projects = DesktopProjectService()
+    project_root = (projects.projects_dir / args.project).resolve()
+    if args.episode_start > 0:
+        episodes = range(args.episode_start, (args.episode_end or args.episode_start) + 1)
+    else:
+        episodes = [args.episode]
+    overall_rc = 0
+    for ep in episodes:
+        print(f"\n=== Episode {ep:03d} lip-sync ===", flush=True)
+        rc = _run_episode(args, projects, project_root, ep)
+        if rc != 0:
+            overall_rc = rc
+    return overall_rc
 
 
 if __name__ == "__main__":

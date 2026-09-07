@@ -69,6 +69,11 @@ class Settings:
     comfyui_url: str = "localhost:8189"
     comfyui_timeout: int = 600
 
+    # 远程 GPU 服务器路径
+    gpu_remote_project_root: str = "/root/autodl-tmp/manju"
+    gpu_remote_comfy_root: str = "/root/autodl-tmp/ComfyUI"
+    gpu_remote_python: str = "/root/miniconda3/bin/python"
+
     # 数据库与 Pipeline
     sqlite_busy_timeout_ms: int = 30000
     pipeline_stale_after_seconds: int = 300
@@ -113,6 +118,15 @@ def load_settings() -> Settings:
         sqlite_busy_timeout_ms=int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "30000")),
         pipeline_stale_after_seconds=int(
             os.getenv("PIPELINE_STALE_AFTER_SECONDS", "300")
+        ),
+        gpu_remote_project_root=os.getenv(
+            "GPU_REMOTE_PROJECT_ROOT", "/root/autodl-tmp/manju"
+        ),
+        gpu_remote_comfy_root=os.getenv(
+            "GPU_REMOTE_COMFY_ROOT", "/root/autodl-tmp/ComfyUI"
+        ),
+        gpu_remote_python=os.getenv(
+            "GPU_REMOTE_PYTHON", "/root/miniconda3/bin/python"
         ),
     )
 
