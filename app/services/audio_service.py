@@ -472,7 +472,17 @@ class DubbingService:
             elif visible_ai_label:
                 self._burn_ai_label(base_video, destination)
             else:
-                base_video.replace(destination)
+                # Even without subtitles/label, run a final episode-level
+                # loudnorm pass to even out per-segment loudness jumps — but
+                # only if the episode actually has an audio stream. loudnorm
+                # on pure silence (anullsrc) fails, so fall back to copy.
+                if self._has_audio_stream(base_video):
+                    try:
+                        self._normalize_episode_audio(base_video, destination)
+                    except Exception:
+                        base_video.replace(destination)
+                else:
+                    base_video.replace(destination)
 
             elapsed = time.monotonic() - started
             manifest_path = (
@@ -953,8 +963,45 @@ class DubbingService:
                 "medium",
                 "-crf",
                 "18",
+                "-af",
+                "loudnorm=I=-16:TP=-1.5:LRA=11",
                 "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
+                "-movflags",
+                "+faststart",
+                str(destination),
+            ],
+            timeout=1800,
+        )
+
+    def _normalize_episode_audio(self, source: Path, destination: Path) -> None:
+        """Final episode-level loudnorm pass for episodes without subtitles."""
+        self._run(
+            [
+                str(self.ffmpeg_executable),
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                str(source),
+                "-c:v",
                 "copy",
+                "-af",
+                "loudnorm=I=-16:TP=-1.5:LRA=11",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
                 "-movflags",
                 "+faststart",
                 str(destination),
@@ -990,8 +1037,15 @@ class DubbingService:
             if spec.subtitle_enabled and spec.mode != "mute" and result.text:
                 local_cues = cls._read_srt_cues(result.subtitle_path)
                 if not local_cues:
+                    # Fallback: show the full line as one cue. Cap the end
+                    # at the timeline duration so the subtitle does not
+                    # outlast the (possibly trimmed) audio.
+                    cue_end = min(
+                        result.audio_duration_seconds,
+                        result.timeline_duration_seconds - spec.lead_seconds,
+                    )
                     local_cues = [
-                        (0.0, result.audio_duration_seconds, result.text)
+                        (0.0, max(0.2, cue_end), result.text)
                     ]
                 for local_start, local_end, local_text in local_cues:
                     start = offset + spec.lead_seconds + local_start
