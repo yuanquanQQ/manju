@@ -155,6 +155,21 @@ def run_compile_novel(
             with ThreadPoolExecutor(max_workers=concurrency) as pool:
                 futures = {pool.submit(_analyze_one, ch): ch for ch in pending_chapters}
                 for future in as_completed(futures):
+                    # Check cancel/pause between futures so a long-running
+                    # batch still responds to user requests.
+                    state = get_job(job.id)
+                    if state.cancel_requested:
+                        for f in futures:
+                            f.cancel()
+                        transition_job(job.id, JobStatus.CANCELED, result=stats)
+                        stats["status"] = JobStatus.CANCELED.value
+                        return stats
+                    if state.pause_requested:
+                        for f in futures:
+                            f.cancel()
+                        transition_job(job.id, JobStatus.PAUSED, result=stats)
+                        stats["status"] = JobStatus.PAUSED.value
+                        return stats
                     chapter = futures[future]
                     completed_count += 1
                     heartbeat_job(job.id, completed_count / len(chapters))

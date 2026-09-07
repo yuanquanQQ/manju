@@ -22,14 +22,14 @@ from app.domain.storyboard import Episode
 
 
 def _collect_fingerprints_from_episodes(
-    output_dir: Path, *, exclude: int = 0
+    output_dir: Path,
 ) -> dict[str, str]:
     """Scan all episode files for the most recent character fingerprints.
 
     Fingerprints are passed from episode to episode so the same character keeps
     the same identity lock. When episodes are generated out of order the chain
     breaks; this fallback reads fingerprints from every existing episode file
-    (excluding the one being generated) so the identity is still inherited.
+    so the identity is still inherited.
     """
     collected: dict[str, str] = {}
     for episode_file in sorted(output_dir.glob("episode_*.json")):
@@ -116,7 +116,7 @@ def generate_storyboard(
             )
             if not existing_fingerprints:
                 existing_fingerprints = _collect_fingerprints_from_episodes(
-                    output_dir, exclude=chapter.order
+                    output_dir
                 )
             episode = direct_chapter(
                 analysis,

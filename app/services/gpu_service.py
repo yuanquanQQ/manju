@@ -39,7 +39,6 @@ from app.services.video_service import (
     normalize_frame_count,
 )
 
-
 # MiniMax H3 workflow engine. The T8 node graph (comfyui-minimax-h3-audio-T8)
 # is the production engine: joint audio conditioning + dual-clock sampling.
 # The stock official graph stays available for rollback through the
@@ -1062,7 +1061,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                     if cast_references:
                         remote_names: list[str] = []
                         primary_name = cast_references[0][0]
-                        for idx, (cast_name, reference_path) in enumerate(
+                        for idx, (_cast_name, reference_path) in enumerate(
                             cast_references
                         ):
                             reference_filename = (
@@ -1352,7 +1351,6 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                         if chain_updates:
                             spec = spec.model_copy(update=chain_updates)
                     # else: scene/cast changed → independent first frame
-                source = self._project_file(root, spec.source_image, "起始帧")
                 source = self._project_file(root, spec.source_image, "起始帧")
                 end_source = (
                     self._project_file(root, spec.end_image, "结束帧") if spec.end_image else None
