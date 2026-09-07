@@ -340,7 +340,10 @@ class DubbingService:
                 # voice saying the same line. Flag it so _render_segment can
                 # suppress the vocal frequency range in the background bed.
                 source_has_native_dialogue = (
-                    source_has_audio and spec.mode == "dialogue"
+                    source_has_audio
+                    and spec.mode == "dialogue"
+                    and spec.preserve_source_audio
+                    and spec.text.strip()
                 )
                 audio_based_duration = (
                     audio_duration
@@ -348,8 +351,12 @@ class DubbingService:
                     + spec.tail_seconds
                 )
                 if spec.mode == "mute":
-                    timeline_duration = video_duration
+                    timeline_duration = max(video_duration, 0.1)
                 else:
+                    # Guard against zero-duration video (probe failure or
+                    # corrupt clip) to avoid producing empty segments that
+                    # break the concat pipeline.
+                    video_duration = max(video_duration, 0.1)
                     # Cap the stretch ratio: if TTS audio is much longer than
                     # the video, stretching the video to match produces ugly
                     # slow-motion. Cap at 1.3× — beyond that, let the audio
@@ -706,18 +713,29 @@ class DubbingService:
                 min(20.0, abs(spec.ducking_gain_db) / 1.5),
             )
             # When the source video was generated with native_full audio,
-            # H3 synthesizes its own dialogue. Apply a bandstop filter to
-            # suppress the vocal frequency range (300-3400 Hz) in the
-            # background bed so the H3-synthesized voice does not overlap
-            # with the TTS-dubbed voice, while preserving ambience/music.
+            # H3 synthesizes its own dialogue. Suppress the vocal frequency
+            # range (300-3400 Hz) in the background bed so the H3-synthesized
+            # voice does not overlap with the TTS-dubbed voice, while
+            # preserving ambience/music below 300 Hz and above 3400 Hz.
+            # A true bandstop requires parallel asplit → lowpass + highpass →
+            # amix, NOT a serial chain (which would collapse to silence).
             if result.source_has_native_dialogue:
-                bed_filter = (
-                    "aresample=48000,"
-                    "highpass=f=300:order=2,lowpass=f=3400:order=2,"
-                    "lowpass=f=300:order=2,highpass=f=3400:order=2,"
-                    "loudnorm=I=-24:TP=-3:LRA=14,"
+                audio_filter = (
+                    f"{voice_filter};"
+                    "[voice]asplit=2[voice_key][voice_mix];"
+                    "[0:a]aresample=48000,asplit=2[bed_lo][bed_hi];"
+                    "[bed_lo]lowpass=f=300:order=4[bed_lo_out];"
+                    "[bed_hi]highpass=f=3400:order=4[bed_hi_out];"
+                    "[bed_lo_out][bed_hi_out]amix=inputs=2:normalize=0[bed_raw];"
+                    "[bed_raw]loudnorm=I=-24:TP=-3:LRA=14,"
                     f"volume={spec.source_audio_gain_db - 6:.2f}dB,"
-                    f"apad=pad_dur={target:.3f},atrim=duration={target:.3f}"
+                    f"apad=pad_dur={target:.3f},atrim=duration={target:.3f}[bed];"
+                    "[bed][voice_key]sidechaincompress="
+                    f"threshold=0.025:ratio={duck_ratio:.2f}:"
+                    "attack=20:release=350[ducked];"
+                    "[ducked][voice_mix]amix=inputs=2:duration=longest:"
+                    "dropout_transition=0:normalize=0,"
+                    "alimiter=limit=0.95,loudnorm=I=-16:TP=-1.5:LRA=11[a]"
                 )
             else:
                 bed_filter = (
@@ -725,17 +743,17 @@ class DubbingService:
                     f"volume={spec.source_audio_gain_db:.2f}dB,"
                     f"apad=pad_dur={target:.3f},atrim=duration={target:.3f}"
                 )
-            audio_filter = (
-                f"{voice_filter};"
-                "[voice]asplit=2[voice_key][voice_mix];"
-                f"[0:a]{bed_filter}[bed];"
-                "[bed][voice_key]sidechaincompress="
-                f"threshold=0.025:ratio={duck_ratio:.2f}:"
-                "attack=20:release=350[ducked];"
-                "[ducked][voice_mix]amix=inputs=2:duration=longest:"
-                "dropout_transition=0:normalize=0,"
-                "alimiter=limit=0.95,loudnorm=I=-16:TP=-1.5:LRA=11[a]"
-            )
+                audio_filter = (
+                    f"{voice_filter};"
+                    "[voice]asplit=2[voice_key][voice_mix];"
+                    f"[0:a]{bed_filter}[bed];"
+                    "[bed][voice_key]sidechaincompress="
+                    f"threshold=0.025:ratio={duck_ratio:.2f}:"
+                    "attack=20:release=350[ducked];"
+                    "[ducked][voice_mix]amix=inputs=2:duration=longest:"
+                    "dropout_transition=0:normalize=0,"
+                    "alimiter=limit=0.95,loudnorm=I=-16:TP=-1.5:LRA=11[a]"
+                )
         else:
             # Source video has no audio (e.g. LatentSync lip-sync output). We
             # only have the TTS voice. Add a short fade-in/out so the segment
@@ -1046,22 +1064,24 @@ class DubbingService:
 
     @staticmethod
     def _strip_speaker_prefix(text: str, speaker: str) -> str:
-        """Normalize subtitle text, keeping the speaker prefix for readability.
+        """Normalize subtitle text, keeping the speaker prefix for dialogue.
 
         Multi-person dialogue scenes need the speaker name visible so the
-        audience can tell who is talking. Previously the prefix was stripped,
-        but that made group conversations ambiguous.
+        audience can tell who is talking. Narration (旁白) does not need a
+        prefix, and word-boundary sub-cues from Edge TTS should not each
+        get the prefix repeated.
         """
         value = " ".join(text.strip().split())
-        if speaker:
-            for separator in ("：", ":"):
-                prefix = f"{speaker}{separator}"
-                if value.startswith(prefix):
-                    # Already has a speaker prefix — keep it as-is.
-                    return value
-            # No prefix present — prepend the speaker for clarity.
-            if value:
-                return f"{speaker}：{value}"
+        if not speaker or speaker == "旁白":
+            return value
+        for separator in ("：", ":"):
+            prefix = f"{speaker}{separator}"
+            if value.startswith(prefix):
+                # Already has a speaker prefix — keep it as-is.
+                return value
+        # No prefix present — prepend the speaker for clarity.
+        if value:
+            return f"{speaker}：{value}"
         return value
 
     @staticmethod

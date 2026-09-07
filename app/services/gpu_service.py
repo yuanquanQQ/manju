@@ -698,7 +698,12 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                         )
             finally:
                 sftp.close()
-            self._exec(client, f"rm -rf -- {shlex.quote(remote_output_dir)}", timeout=30)
+            # Clean up remote output to prevent disk bloat. Wrapped so a
+            # cleanup failure does not flip an already-successful result.
+            try:
+                self._exec(client, f"rm -rf -- {shlex.quote(remote_output_dir)}", timeout=30)
+            except Exception:
+                pass
 
             manifest_path = local_output_dir / "manifest.json"
             manifest = (
@@ -862,7 +867,10 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                         )
             finally:
                 sftp.close()
-            self._exec(client, f"rm -rf -- {shlex.quote(remote_output_dir)}", timeout=30)
+            try:
+                self._exec(client, f"rm -rf -- {shlex.quote(remote_output_dir)}", timeout=30)
+            except Exception:
+                pass
 
             manifest_path = local_output_dir / "manifest.json"
             manifest = (
@@ -1176,7 +1184,10 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                         )
             finally:
                 sftp.close()
-            self._exec(client, f"rm -rf -- {shlex.quote(remote_output_dir)}", timeout=30)
+            try:
+                self._exec(client, f"rm -rf -- {shlex.quote(remote_output_dir)}", timeout=30)
+            except Exception:
+                pass
 
             manifest_path = local_output_dir / "manifest.json"
             manifest = (
@@ -1628,7 +1639,10 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                     results.extend(shot_results)
                 finally:
                     sftp.close()
-                self._exec(client, f"rm -rf -- {shlex.quote(remote_output_dir)}", timeout=30)
+                try:
+                    self._exec(client, f"rm -rf -- {shlex.quote(remote_output_dir)}", timeout=30)
+                except Exception:
+                    pass
                 if not shot_results:
                     raise RuntimeError(f"H3 镜头 {spec.shot_number:02d} 完成但没有视频输出")
                 # Track the last generated clip for the next shot's chain.
@@ -1793,7 +1807,9 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
         if not text:
             return ""
         result = text
-        for cn, en in cls._MOTION_MAP.items():
+        # Sort by key length descending so compound words (e.g. "转身离开")
+        # are matched before their substrings (e.g. "转身" or "走").
+        for cn, en in sorted(cls._MOTION_MAP.items(), key=lambda kv: -len(kv[0])):
             result = result.replace(cn, f" {en} ")
         # Clean up double spaces from replacements.
         return " ".join(result.split())
@@ -2040,8 +2056,13 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
                         'curl -fsS -X POST http://127.0.0.1:8188/queue --data \'{"clear":true}\'',
                         timeout=10,
                     )
-            except Exception:
-                pass
+            except Exception as exc:
+                # Log but do not crash — queue cleanup is best-effort and
+                # a transient curl failure does not mean ComfyUI is unhealthy.
+                import logging
+                logging.getLogger(__name__).debug(
+                    "ComfyUI queue check/clear failed (non-fatal): %s", exc
+                )
             return
 
         process_probe = (
@@ -2095,6 +2116,10 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
                     auth_timeout=15,
                 )
                 return client
+            except paramiko.AuthenticationException:
+                # Wrong credentials — retrying is pointless and wastes time.
+                client.close()
+                raise
             except (
                 EOFError,
                 OSError,
