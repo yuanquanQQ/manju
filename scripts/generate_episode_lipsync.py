@@ -57,6 +57,14 @@ def _run_episode(
 
     gpu = GpuServerService()
     config = default_gpu_connection()
+    # Read SSH password from ssh.txt (same as generate_episode_h3.py)
+    ssh_path = project_root.parent.parent / "ssh.txt"
+    if ssh_path.is_file():
+        for line in ssh_path.read_text(encoding="utf-8-sig").splitlines():
+            line = line.strip()
+            if line and "ssh " not in line.lower():
+                config.password = line.split("=", 1)[-1].split(":", 1)[-1].strip() if any(sep in line for sep in (":", "=")) else line
+                break
     latentsync = LatentSyncRemoteService(gpu)
     dubbing = DubbingService()
     comfy_was_online = gpu.check_status(config).comfy_online

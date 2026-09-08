@@ -24,9 +24,15 @@ from app.pipeline.pacing import normalize_episode_duration, pacing_target
 
 DIRECTOR_SYSTEM_PROMPT = """你是漫剧导演兼视觉设计，负责把小说章节转为可直接用于 AI 生图的分镜脚本。
 
+【输出格式 — 最高优先级】
+你的回复必须且只能是一个 JSON 对象，以 {"shots": [ 开头，以 ]} 结尾。
+禁止输出任何思考过程、分析文本、解释、代码块标记或 Markdown 格式。
+禁止在 JSON 之前或之后添加任何文字。如果你需要思考，请直接在 JSON 结构中体现，不要输出思考文本。
+违反此规则的回复将被视为失败并触发重试。
+
 核心要求：
 1. 每个完整章节必须生成 18-28 个镜头，总时长不得少于 60 秒。禁止把整段情节压缩成一张概括性插画。
-   每个核心事件至少拆成“建立/动作准备/动作结果/人物反应”中的 2-4 个镜头；
+   每个核心事件至少拆成"建立/动作准备/动作结果/人物反应"中的 2-4 个镜头；
    对话必须使用说话者、听者反应、过肩或细节插入组成镜头组。
 2. 每个镜头的 scene_description 是 50-140 字中文画面描写，包含人物位置关系、动作细节、关键背景元素的精确刻画，避免概括性总结和剧情概述。
 3. 每个镜头必须有 environment 对象，包含：
@@ -50,7 +56,7 @@ DIRECTOR_SYSTEM_PROMPT = """你是漫剧导演兼视觉设计，负责把小说�
 7. camera_movement 从以下选择：static / pan / tilt / zoom / dolly / handheld / crane / tracking
 8. duration_seconds: 反应/细节镜头 2.5-3.5s，对话镜头 3-4.5s，动作镜头 3-5s，建立镜头 3-4s；
    完整章节所有镜头合计必须达到 60-90 秒
-   dialogue 只写本镜头实际说出的台词或旁白，格式优先为“角色名：台词”；
+   dialogue 只写本镜头实际说出的台词或旁白，格式优先为"角色名：台词"；
    单句尽量控制在 6-24 个汉字，画面无人说话时可以留空，后续配音模块会自动生成旁白。
 9. 禁止输出任何思考过程、分析文本或解释。回复必须且只能是纯 JSON 对象。"""
 
@@ -78,7 +84,7 @@ DIRECTOR_SYSTEM_PROMPT = DIRECTOR_SYSTEM_PROMPT.replace(
    - eyeline: 对话双方的左右视线方向
    - screen_axis: 180度轴线和人物左右位置
    - bridge_prompt: 用于首尾各数帧稳定衔接的明确画面指令
-   - 首帧应选“主要动作发生前一刻”，有重心、动作线和运动空间，禁止站桩、正面对称摆拍
+   - 首帧应选"主要动作发生前一刻"，有重心、动作线和运动空间，禁止站桩、正面对称摆拍
 11. 禁止输出""",
 )
 
@@ -550,6 +556,9 @@ def direct_chapter(
     segments = _source_segments(source_text, target_shots=target.target_shots)
     raw_shots: list[dict[str, Any]] = []
     format_prompt = (
+        "【输出格式 — 最高优先级】你的回复必须且只能是以 "
+        '{"shots": [ 开头、以 ]} 结尾的纯 JSON 对象。'
+        "禁止输出思考过程、解释、代码块标记或 Markdown。"
         "只输出紧凑镜头节拍，不要输出 environment、完整人物外貌、"
         "continuity_plan 或 video_generation；程序会根据定妆和连续性规则自动补齐。"
         "每项只保留 scene_description、characters（姓名字符串数组）、location、"
