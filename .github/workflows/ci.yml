@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m ruff check .
+      - run: >-
+          python -m mypy
+          app/domain/narrative.py
+          app/evaluation/narrative_quality.py
+          app/pipeline/story_bible.py
+          app/pipeline/story_plan_store.py
+      - run: python -m pytest -p no:cacheprovider --basetemp .test-tmp

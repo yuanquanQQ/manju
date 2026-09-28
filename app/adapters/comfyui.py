@@ -60,7 +60,7 @@ class ComfyUIClient:
         result: dict[str, list[str]] = {}
         for name, node in info.items():
             inp = node.get("input", {}).get("required", {})
-            for param, spec in inp.items():
+            for _param, spec in inp.items():
                 if isinstance(spec, list) and len(spec) >= 2:
                     meta = spec[1]
                     if isinstance(meta, dict) and "options" in meta:
@@ -217,7 +217,7 @@ class ComfyUIClient:
         saved: list[Path] = []
 
         outputs = history.get("outputs", {})
-        for node_id, node_output in outputs.items():
+        for _node_id, node_output in outputs.items():
             images = node_output.get("images", [])
             for img in images:
                 filename = img.get("filename", "")

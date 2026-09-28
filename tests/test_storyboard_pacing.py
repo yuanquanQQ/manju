@@ -34,3 +34,17 @@ def test_duration_normalizer_keeps_shot_and_video_duration_in_sync() -> None:
         shot.video_generation.duration_seconds == shot.duration_seconds
         for shot in shots
     )
+
+
+def test_story_plan_controls_pacing_instead_of_chapter_length() -> None:
+    target = pacing_target(
+        9000,
+        event_count=12,
+        dialogue_count=20,
+        planned_shots=14,
+        planned_duration_seconds=56,
+    )
+
+    assert target.target_shots == 14
+    assert target.target_duration_seconds == 56
+    assert target.min_duration_seconds == 47.6

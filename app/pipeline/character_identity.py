@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+_PLACEHOLDERS = ("已锁定", "按设定", "待定", "未提供")
+
+
+def _usable_identity(value: object) -> bool:
+    text = str(value or "").strip()
+    return bool(text) and not any(term in text for term in _PLACEHOLDERS)
+
 
 def derive_visual_fingerprints(
     profiles: dict[str, str],
@@ -16,7 +23,7 @@ def derive_visual_fingerprints(
     fingerprints = {
         str(name): str(value).strip()
         for name, value in (existing or {}).items()
-        if str(name).strip() and str(value).strip()
+        if str(name).strip() and _usable_identity(value)
     }
     appearances: dict[str, list[str]] = {}
     for shot in shots:

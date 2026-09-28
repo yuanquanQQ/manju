@@ -204,17 +204,8 @@ def _try_parse_any_object(text: str) -> dict | None:
     return None
 
 
-def _empty_result() -> dict[str, Any]:
-    return {
-        "new_character": [],
-        "new_scene": [],
-        "new_event": [],
-        "summary": "",
-    }
-
-
 def extract_chapter(chapter: dict[str, Any]) -> dict[str, Any]:
-    """对单章调用 LLM，返回结构化结果（失败时返回空结果，并打日志）。"""
+    """对单章调用 LLM，返回结构化结果，失败时明确终止本章。"""
     prompt = build_user_prompt(chapter)
     last_err: Exception | None = None
     for attempt in range(1, settings.llm_max_retries + 1):
@@ -254,7 +245,9 @@ def extract_chapter(chapter: dict[str, Any]) -> dict[str, Any]:
             )
             time.sleep(min(2 * attempt, 10))
     logger.error(f"ch{chapter.get('chapter_id')} 抽取彻底失败: {last_err}")
-    return _empty_result()
+    raise RuntimeError(
+        f"ch{chapter.get('chapter_id')} 抽取彻底失败: {last_err}"
+    ) from last_err
 
 
 def merge_into_chapter(chapter: dict[str, Any], extracted: dict[str, Any]) -> dict[str, Any]:

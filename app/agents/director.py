@@ -5,88 +5,223 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.adapters.llm import OpenAICompatibleLLM, StructuredLLM
+from app.agents.story_planner import format_episode_plan, planned_dialogue_pairs
 from app.core.logger import logger
+from app.core.prompts import load_prompt
+from app.domain.narrative import EpisodePlan
 from app.domain.novel import ChapterAnalysis
 from app.domain.storyboard import (
     CharacterAppearance,
     EnvironmentDetail,
     Episode,
     Shot,
+    ShotAudioGeneration,
     ShotContinuityPlan,
+    ShotLipSyncGeneration,
+    ShotNarrativeBinding,
     ShotVideoGeneration,
 )
+from app.pipeline.audio_timing import optimize_episode_audio_timing
 from app.pipeline.character_identity import derive_visual_fingerprints
 from app.pipeline.continuity import plan_episode_continuity
 from app.pipeline.pacing import normalize_episode_duration, pacing_target
+from app.pipeline.video_prompt import build_storyboard_motion_prompt
 
-DIRECTOR_SYSTEM_PROMPT = """你是漫剧导演兼视觉设计，负责把小说章节转为可直接用于 AI 生图的分镜脚本。
+_DIALOGUE_PARTS = re.compile(r"[／\n]+")
+_DIALOGUE_PREFIX = re.compile(r"^([^：:]{1,40})[：:]\s*(.+)$")
+_PROFILE_PLACEHOLDERS = ("已锁定", "按设定", "待定", "未提供")
 
-【输出格式 — 最高优先级】
-你的回复必须且只能是一个 JSON 对象，以 {"shots": [ 开头，以 ]} 结尾。
-禁止输出任何思考过程、分析文本、解释、代码块标记或 Markdown 格式。
-禁止在 JSON 之前或之后添加任何文字。如果你需要思考，请直接在 JSON 结构中体现，不要输出思考文本。
-违反此规则的回复将被视为失败并触发重试。
 
-核心要求：
-1. 每个完整章节必须生成 18-28 个镜头，总时长不得少于 60 秒。禁止把整段情节压缩成一张概括性插画。
-   每个核心事件至少拆成"建立/动作准备/动作结果/人物反应"中的 2-4 个镜头；
-   对话必须使用说话者、听者反应、过肩或细节插入组成镜头组。
-2. 每个镜头的 scene_description 是 50-140 字中文画面描写，包含人物位置关系、动作细节、关键背景元素的精确刻画，避免概括性总结和剧情概述。
-3. 每个镜头必须有 environment 对象，包含：
-   - layout: 前景/中景/远景的空间层次（10-60字）
-   - lighting: 光源方向（顶光/侧光/逆光/漫射）、强度（强/柔/暗）、色温（暖/冷/中性）、阴影形态（10-50字）
-   - color_palette: 主色调和辅助色（10-40字，如"深蓝与金色为主，暗红点缀"）
-   - atmosphere: 环境特效描述（10-40字，如"薄雾缭绕""落叶飘飞""灵气光点浮动"）
-4. 每个出场人物必须出现在 characters 数组中，每人包含：
-   - name: 人物名
-   - appearance: 外貌（发型发色、脸型、五官、年龄感，20-80字）
-   - clothing: 服饰（风格、颜色、材质、层次、配件，20-80字）
-   - pose: 姿态动作（身体姿态、手势、站位，10-50字）
-   - expression: 表情（眼神、嘴角、眉宇细节，10-40字）
-   同一人物在全章必须重复完全一致的脸型、眼型、鼻形、下颌、发型轮廓、服装主色和标志配件；
-   不同人物必须至少有三项明显不可互换的差异。禁止所有年轻男性共享同一张脸、同一发冠或同色衣服。
-5. image_prompt 是 50-150 词的英文正向 Prompt，以 "masterpiece, best quality," 开头，包含画风标签（如 photorealistic, cinematic, chinese fantasy, xianxia）、场景关键词和人物外观关键词。
-   只要镜头有人物，主要人物必须使用中景或中近景，脸部完整无遮挡、双眼清晰可见，
-   额头与下巴不得裁切；多人场景最多两名主要人物位于前景，其余人物退到背景并保持分离。
-   提示词必须包含 real human actors, video-safe first frame，并排除 anime、illustration、CGI。
-6. camera_angle 从以下选择：close-up / medium shot / wide shot / panoramic / low angle / high angle / POV / over-shoulder / dutch angle
-7. camera_movement 从以下选择：static / pan / tilt / zoom / dolly / handheld / crane / tracking
-8. duration_seconds: 反应/细节镜头 2.5-3.5s，对话镜头 3-4.5s，动作镜头 3-5s，建立镜头 3-4s；
-   完整章节所有镜头合计必须达到 60-90 秒
-   dialogue 只写本镜头实际说出的台词或旁白，格式优先为"角色名：台词"；
-   单句尽量控制在 6-24 个汉字，画面无人说话时可以留空，后续配音模块会自动生成旁白。
-9. 禁止输出任何思考过程、分析文本或解释。回复必须且只能是纯 JSON 对象。"""
+def _is_usable_character_profile(value: object) -> bool:
+    profile = str(value or "").strip()
+    return len(profile) >= 80 and not any(
+        term in profile for term in _PROFILE_PLACEHOLDERS
+    )
 
-DIRECTOR_SYSTEM_PROMPT = DIRECTOR_SYSTEM_PROMPT.replace(
-    "9. 禁止输出",
-    """9. 每个镜头必须同时生成 video_generation：
-   - subject_motion: 只写画面中真实可见、可连续执行的人物动作，不要复述剧情
-   - environment_motion: 雾、风、衣摆、树叶、光影等可见环境运动
-   - motion_prompt: 合并人物与环境动作，使用简短明确的中文指令
-   - continuity_constraints: 要保持稳定的人脸、发型、服装、道具、站位和背景
-   - negative_prompt: 英文负面词，至少包含 face morphing, identity change, extra limbs, flicker, camera shake
-   - camera_movement: slow_push / slow_pull / pan_left / pan_right / tilt_up / tilt_down / still
-   - motion_strength: low / medium / high
-   - screen_direction: auto / left_to_right / right_to_left / static
-   - transition_out: cut / match_cut / dissolve / fade_black
-10. 相邻镜头不是独立插画，必须同时生成 continuity_plan：
-   - group_id: 同一地点、同一时间和同一组人物使用同一个连续组；闪回必须单独成组
-   - beat_type: establish / action / reaction / dialogue / flashback
-   - action_phase: setup / anticipation / reaction / interaction / impact / recovery
-   - entry_state: 本镜头开始时承接上一镜头的人物姿态、视线、道具和环境状态
-   - exit_state: 本镜头结束时必须留给下一镜头承接的可见状态
-   - match_anchor: 必须跨镜头一致的人脸、服装、道具、主光、背景地标、屏幕方向
-   - transition_strategy: cut / cut_on_action / eyeline_cut / match_cut / dissolve / fade_black
-   - match_action: 上一镜头结束动作与本镜头开始动作如何精确衔接
-   - eyeline: 对话双方的左右视线方向
-   - screen_axis: 180度轴线和人物左右位置
-   - bridge_prompt: 用于首尾各数帧稳定衔接的明确画面指令
-   - 首帧应选"主要动作发生前一刻"，有重心、动作线和运动空间，禁止站桩、正面对称摆拍
-11. 禁止输出""",
-)
+
+def _generate_character_profiles(
+    analysis: ChapterAnalysis,
+    source_text: str,
+    client: StructuredLLM,
+) -> dict[str, str]:
+    """Generate the immutable cast bible before any fresh storyboard shots."""
+
+    required = [
+        mention.surface_text.strip()
+        for mention in analysis.mentions
+        if str(mention.entity_type.value) == "character"
+        and mention.surface_text.strip()
+    ]
+    required = list(dict.fromkeys(required))
+    if not required:
+        return {}
+    result = client.complete(
+        system_prompt=load_prompt("character_bible"),
+        user_prompt=(
+            f"为这些已识别人物建立真人影视定妆圣经：{'、'.join(required)}；"
+            "同时检查原文并补充所有会在画面中出现的具名人物。"
+            "每条 profile 必须用中文明确给出年龄感、性别呈现、脸型、眼型、鼻形、"
+            "下颌、肤色、身形、发型轮廓、服装款式、主色、材质层次、鞋履和唯一标志配件；"
+            "不得使用‘按设定’‘已锁定’等占位表达。不同人物至少三项视觉差异。\n\n"
+            f"结构化分析：\n{_build_analysis_summary(analysis)}\n\n"
+            f"原文：\n{source_text[:12000]}"
+        ),
+        json_schema={
+            "type": "object",
+            "properties": {
+                "character_profiles": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string", "minLength": 80},
+                }
+            },
+            "required": ["character_profiles"],
+        },
+    )
+    raw = result.get("character_profiles")
+    raw = raw if isinstance(raw, dict) else {}
+    profiles = {
+        str(name).strip(): str(profile).strip()[:900]
+        for name, profile in raw.items()
+        if str(name).strip() and _is_usable_character_profile(profile)
+    }
+    invalid = [
+        name
+        for name in required
+        if not _is_usable_character_profile(profiles.get(name))
+    ]
+    if invalid:
+        raise RuntimeError(f"角色定妆圣经缺失或仍为占位内容：{'、'.join(invalid)}")
+    return profiles
+
+
+def _dialogue_payload(dialogue: str) -> tuple[ShotAudioGeneration, ShotLipSyncGeneration]:
+    """Bind one exact storyboard line to its speaker, audio, and lip-sync state."""
+
+    raw = dialogue.strip()
+    if not raw:
+        return (
+            ShotAudioGeneration(enabled=False, mode="mute", speaker="旁白", text=""),
+            ShotLipSyncGeneration(),
+        )
+    parts = [part.strip() for part in _DIALOGUE_PARTS.split(raw) if part.strip()]
+    if len(parts) != 1:
+        raise ValueError("每个镜头只能包含一个说话人的一条连续台词")
+    match = _DIALOGUE_PREFIX.match(parts[0])
+    if not match:
+        raise ValueError(f"对白必须使用“角色名：原文台词”格式：{raw}")
+    speaker, text = match.groups()
+    speaker = speaker.strip()
+    text = text.strip()
+    narration = speaker == "旁白"
+    audio = ShotAudioGeneration(
+        enabled=True,
+        mode="auto_narration" if narration else "dialogue",
+        speaker=speaker,
+        text=text,
+        voice_assignment_mode="auto",
+        timing_status="unplanned",
+    )
+    lip_sync = ShotLipSyncGeneration(
+        enabled=not narration,
+        target_character="" if narration else speaker,
+        status="disabled" if narration else "pending",
+    )
+    return audio, lip_sync
+
+
+def _validate_dialogues_against_source(
+    items: list[dict[str, Any]],
+    source_text: str,
+    allowed_dialogues: set[tuple[str, str]] | None = None,
+    allowed_adaptations: set[tuple[str, str]] | None = None,
+) -> list[str]:
+    errors: list[str] = []
+    for index, item in enumerate(items, start=1):
+        raw = str(item.get("dialogue") or "").strip()
+        if not raw:
+            continue
+        parts = [part.strip() for part in _DIALOGUE_PARTS.split(raw) if part.strip()]
+        if len(parts) != 1:
+            errors.append(f"镜头{index}包含多个说话者")
+            continue
+        match = _DIALOGUE_PREFIX.match(parts[0])
+        if not match:
+            errors.append(f"镜头{index}对白格式错误")
+            continue
+        speaker, text = (value.strip() for value in match.groups())
+        adapted = (speaker, text) in (allowed_adaptations or set())
+        if text not in source_text and not adapted:
+            errors.append(f"镜头{index}的{speaker}台词并非原文逐字内容")
+        known_speakers = {
+            known_speaker
+            for known_speaker, known_text in (allowed_dialogues or set())
+            if known_text == text
+        }
+        if speaker != "旁白" and known_speakers and speaker not in known_speakers:
+            errors.append(f"镜头{index}台词与说话人{speaker}的原文记录不匹配")
+        visible_names = {
+            str(name).strip()
+            for name in (item.get("characters") or [])
+            if str(name).strip()
+        }
+        scene = " ".join(
+            str(item.get(key) or "")
+            for key in ("scene_description", "visible_action")
+        )
+        if speaker != "旁白" and speaker not in visible_names and "画外" not in scene:
+            errors.append(f"镜头{index}说话人{speaker}不在画面且未标明画外")
+    return errors
+
+
+def _validate_compact_items(
+    items: list[dict[str, Any]],
+    profiles: dict[str, str] | None = None,
+    episode_plan: EpisodePlan | None = None,
+) -> list[str]:
+    errors: list[str] = []
+    camera_angles = {
+        "close-up", "medium shot", "wide shot", "panoramic", "low angle",
+        "high angle", "POV", "over-shoulder", "dutch angle",
+    }
+    camera_movements = {
+        "static", "pan", "tilt", "zoom", "dolly", "handheld", "crane", "tracking",
+        "slow_push", "slow_pull", "pan_left", "pan_right", "tilt_up", "tilt_down", "still",
+    }
+    for index, item in enumerate(items, start=1):
+        scene = str(item.get("scene_description") or "").strip()
+        visual = str(item.get("visual_prompt") or "").strip()
+        if len(scene) < 10:
+            errors.append(f"镜头{index}画面描述少于10字")
+        if not visual or not visual.isascii():
+            errors.append(f"镜头{index}visual_prompt必须为英文ASCII")
+        if str(item.get("camera_angle") or "") not in camera_angles:
+            errors.append(f"镜头{index}景别非法")
+        movement = str(item.get("camera_movement") or "static")
+        if movement not in camera_movements:
+            errors.append(f"镜头{index}运镜非法")
+        if profiles is not None:
+            missing = [
+                str(name).strip()
+                for name in (item.get("characters") or [])
+                if str(name).strip() not in profiles
+            ]
+            if missing:
+                errors.append(
+                    f"镜头{index}人物缺少定妆：{'、'.join(dict.fromkeys(missing))}"
+                )
+        if episode_plan is not None:
+            scene_number = int(item.get("planned_scene_number") or 0)
+            if scene_number < 1 or scene_number > len(episode_plan.scenes):
+                errors.append(f"镜头{index}未绑定有效编剧场次")
+    return errors
+
+DIRECTOR_SYSTEM_PROMPT = load_prompt("director")
+
+
 
 
 _CAMERA_MOVEMENT_MAP = {
@@ -154,10 +289,22 @@ def _video_generation_from_item(
         or ""
     ).strip()
     motion_prompt = str(raw.get("motion_prompt") or "").strip()
-    if not motion_prompt:
-        motion_prompt = "；".join(
-            part for part in (subject_motion, environment_motion) if part
-        )
+    continuity_plan = item.get("continuity_plan")
+    continuity_plan = (
+        continuity_plan if isinstance(continuity_plan, dict) else {}
+    )
+    motion_prompt = build_storyboard_motion_prompt(
+        shot_number=int(item.get("shot_number") or 1),
+        duration_seconds=duration_seconds,
+        scene_description=scene_description,
+        subject_motion=subject_motion,
+        environment_motion=environment_motion,
+        entry_state=str(continuity_plan.get("entry_state") or ""),
+        exit_state=str(continuity_plan.get("exit_state") or subject_motion),
+        dialogue=str(item.get("dialogue") or ""),
+        sound_effect=str(item.get("sound_effect") or ""),
+        dramatic_point=str(item.get("emotion") or ""),
+    )
     continuity = str(raw.get("continuity_constraints") or "").strip()
     if not continuity:
         names = "、".join(
@@ -193,7 +340,7 @@ def _video_generation_from_item(
         negative_prompt=str(
             raw.get("negative_prompt") or _DEFAULT_VIDEO_NEGATIVE
         )[:1600],
-        motion_prompt=motion_prompt[:1600],
+        motion_prompt=motion_prompt[:4000],
         camera_movement=str(
             raw.get("camera_movement")
             or _CAMERA_MOVEMENT_MAP.get(camera_movement, "slow_push")
@@ -311,6 +458,7 @@ def _expand_compact_beat(
     item: dict[str, Any],
     *,
     profiles: dict[str, str],
+    episode_plan: EpisodePlan | None = None,
 ) -> dict[str, Any]:
     """Expand a compact LLM beat into the stable full shot contract."""
 
@@ -343,16 +491,17 @@ def _expand_compact_beat(
     characters = [
         {
             "name": name,
-            "appearance": (
-                str(profiles.get(name) or f"已锁定定妆的{name}")[:300]
-            ),
-            "clothing": "严格沿用已锁定定妆的服装主色、材质与标志配件",
+            "appearance": str(profiles[name])[:300],
+            "clothing": str(profiles[name])[:300],
             "pose": visible_action[:200],
             "expression": expression[:150],
         }
         for name in names
     ]
     visual_prompt = str(item.get("visual_prompt") or scene).strip()
+    identity_prompt = "; ".join(
+        str(profiles.get(name) or "") for name in names if profiles.get(name)
+    )
     duration = max(
         2.5,
         min(float(item.get("duration_seconds") or 3.2), 5.0),
@@ -367,6 +516,27 @@ def _expand_compact_beat(
         if transition_hint == "match_cut"
         else transition_hint
     )
+    planned_scene_number = max(0, int(item.get("planned_scene_number") or 0))
+    planned_scene = (
+        episode_plan.scenes[planned_scene_number - 1]
+        if episode_plan
+        and 1 <= planned_scene_number <= len(episode_plan.scenes)
+        else None
+    )
+    source_event_ids = [
+        str(event_id).strip()
+        for event_id in (item.get("source_event_ids") or [])
+        if str(event_id).strip()
+    ]
+    if planned_scene and not source_event_ids:
+        source_event_ids = list(planned_scene.source_event_ids)
+    dramatic_purpose = str(item.get("dramatic_purpose") or "").strip()
+    value_before = str(item.get("value_before") or "").strip()
+    value_after = str(item.get("value_after") or "").strip()
+    if planned_scene:
+        dramatic_purpose = dramatic_purpose or planned_scene.purpose
+        value_before = value_before or planned_scene.value_before
+        value_after = value_after or planned_scene.value_after
     return {
         "scene_description": scene,
         "environment": {
@@ -378,21 +548,39 @@ def _expand_compact_beat(
         "characters": characters,
         "camera_angle": framing,
         "camera_movement": camera_movement,
-        "emotion": str(item.get("emotion") or "克制的戏剧张力")[:100],
+        "emotion": str(
+            item.get("emotion")
+            or (
+                f"{planned_scene.emotion_start}转为{planned_scene.emotion_end}"
+                if planned_scene
+                else "克制的戏剧张力"
+            )
+        )[:100],
         "dialogue": str(item.get("dialogue") or "")[:500],
         "sound_effect": str(item.get("sound_effect") or "")[:200],
         "duration_seconds": duration,
         "transition": source_transition,
         "image_prompt": (
             "masterpiece, best quality, photorealistic live-action Chinese "
-            f"xianxia cinematic scene, {visual_prompt}, {framing}, real human "
+            f"xianxia cinematic scene, {visual_prompt}, {identity_prompt}, {framing}, real human "
             "actors, natural skin texture, coherent anatomy, cinematic lighting, "
             "video-safe first frame, no anime, no illustration, no CGI, no text, "
             "no logo, no watermark"
         )[:600],
         "style_preset": "真人电影",
+        "narrative_binding": {
+            "scene_number": planned_scene_number,
+            "dramatic_purpose": dramatic_purpose[:300],
+            "source_event_ids": source_event_ids,
+            "value_before": value_before[:120],
+            "value_after": value_after[:120],
+        },
         "continuity_plan": {
-            "group_id": "scene_01",
+            "group_id": (
+                f"scene_{planned_scene_number:02d}"
+                if planned_scene_number
+                else "scene_01"
+            ),
             "beat_type": beat_type,
             "action_phase": "anticipation",
             "entry_state": "",
@@ -445,6 +633,7 @@ def _parse_shots(raw_data: dict[str, Any]) -> list[Shot]:
 
     plan_episode_continuity({"shots": shots_data}, force=True)
     shots: list[Shot] = []
+    parse_errors: list[str] = []
     for idx, item in enumerate(shots_data, start=1):
         if not isinstance(item, dict):
             continue
@@ -498,6 +687,9 @@ def _parse_shots(raw_data: dict[str, Any]) -> list[Shot]:
             continuity_raw = (
                 continuity_raw if isinstance(continuity_raw, dict) else {}
             )
+            audio_generation, lip_sync = _dialogue_payload(
+                str(item.get("dialogue") or "")
+            )
             shots.append(
                 Shot(
                     shot_number=item.get("shot_number", idx),
@@ -525,10 +717,18 @@ def _parse_shots(raw_data: dict[str, Any]) -> list[Shot]:
                     continuity_plan=ShotContinuityPlan.model_validate(
                         continuity_raw
                     ),
+                    audio_generation=audio_generation,
+                    lip_sync=lip_sync,
+                    narrative_binding=ShotNarrativeBinding.model_validate(
+                        item.get("narrative_binding") or {}
+                    ),
                 )
             )
         except Exception as exc:
             logger.warning(f"Shot {idx} 解析失败: {exc}")
+            parse_errors.append(f"镜头{idx}: {exc}")
+    if parse_errors:
+        raise ValueError("分镜解析失败：" + "；".join(parse_errors))
     return shots
 
 
@@ -543,15 +743,44 @@ def direct_chapter(
     character_visual_fingerprints: dict[str, str] | None = None,
     character_styles: dict[str, str] | None = None,
     character_generation_presets: dict[str, str] | None = None,
+    episode_plan: EpisodePlan | None = None,
 ) -> Episode:
     """将单章分析结果转为视觉级分镜。"""
     client = llm or OpenAICompatibleLLM()
     summary_text = _build_analysis_summary(analysis)
-    profiles = dict(character_profiles or {})
+    profiles = {
+        str(name).strip(): str(profile).strip()
+        for name, profile in (character_profiles or {}).items()
+        if str(name).strip() and _is_usable_character_profile(profile)
+    }
+    analyzed_names = {
+        mention.surface_text.strip()
+        for mention in analysis.mentions
+        if str(mention.entity_type.value) == "character"
+    }
+    allowed_dialogues = {
+        (dialogue.speaker.strip(), dialogue.text.strip())
+        for dialogue in analysis.dialogues
+        if dialogue.speaker.strip() and dialogue.text.strip()
+    }
+    allowed_adaptations = (
+        planned_dialogue_pairs(episode_plan) if episode_plan else set()
+    )
+    if not analyzed_names.issubset(profiles):
+        generated_profiles = _generate_character_profiles(
+            analysis,
+            source_text,
+            client,
+        )
+        profiles = {**generated_profiles, **profiles}
     target = pacing_target(
         len(source_text),
         event_count=len(analysis.events),
         dialogue_count=len(analysis.dialogues),
+        planned_shots=episode_plan.target_shot_count if episode_plan else 0,
+        planned_duration_seconds=(
+            episode_plan.target_duration_seconds if episode_plan else 0.0
+        ),
     )
     segments = _source_segments(source_text, target_shots=target.target_shots)
     raw_shots: list[dict[str, Any]] = []
@@ -564,13 +793,19 @@ def direct_chapter(
         "每项只保留 scene_description、characters（姓名字符串数组）、location、"
         "camera_angle、camera_movement、beat_type、visible_action、expression、"
         "dialogue、duration_seconds、visual_prompt、lighting、atmosphere、"
-        "screen_direction、transition_hint。"
+        "screen_direction、transition_hint，以及 planned_scene_number、"
+        "dramatic_purpose、source_event_ids、value_before、value_after。"
+    )
+    narrative_context = (
+        format_episode_plan(episode_plan)
+        if episode_plan
+        else "未提供独立编剧计划，按结构化分析建立基础场次。"
     )
     for segment_index, (segment_text, segment_target) in enumerate(
         segments,
         start=1,
     ):
-        segment_min = max(8, segment_target - 1)
+        segment_min = max(2, segment_target - 1)
         prompt = (
             f"请把本章第 {segment_index}/{len(segments)} 个连续段落转换为"
             f" {segment_target}-{segment_target + 2} 个镜头，至少 {segment_min} 个。"
@@ -578,7 +813,9 @@ def direct_chapter(
             "不要跨越或概括本段事件。每镜只表现一个可见动作或一个明确反应。\n\n"
             f"全章节奏目标：{target.target_shots} 个左右、"
             f"{target.target_duration_seconds:.0f} 秒，最低 "
-            f"{target.min_shots} 镜头且不少于 60 秒。\n\n"
+            f"{target.min_shots} 镜头且不少于 "
+            f"{target.min_duration_seconds:.0f} 秒。\n\n"
+            f"职业编剧计划：\n{narrative_context}\n\n"
             f"{_identity_bible(profiles)}\n\n"
             f"{format_prompt}\n\n"
             f"全章结构化分析：\n{summary_text}\n\n"
@@ -609,19 +846,53 @@ def direct_chapter(
             segment_items = [
                 item for item in candidate if isinstance(item, dict)
             ] if isinstance(candidate, list) else []
-            if len(segment_items) >= segment_min:
+            dialogue_errors = _validate_dialogues_against_source(
+                segment_items,
+                source_text,
+                allowed_dialogues,
+                allowed_adaptations,
+            )
+            content_errors = _validate_compact_items(
+                segment_items,
+                profiles,
+                episode_plan,
+            )
+            if (
+                len(segment_items) >= segment_min
+                and not dialogue_errors
+                and not content_errors
+            ):
                 break
             logger.warning(
                 f"章节 {analysis.chapter_id} 第 {segment_index} 段仅生成 "
-                f"{len(segment_items)} 个镜头，要求至少 {segment_min}，正在重试"
+                f"{len(segment_items)} 个镜头，要求至少 {segment_min}；"
+                f"对白问题：{'；'.join(dialogue_errors) or '无'}，正在重试"
+                f"；内容问题：{'；'.join(content_errors) or '无'}"
             )
-        if len(segment_items) < segment_min:
+        dialogue_errors = _validate_dialogues_against_source(
+            segment_items,
+            source_text,
+            allowed_dialogues,
+            allowed_adaptations,
+        )
+        content_errors = _validate_compact_items(
+            segment_items,
+            profiles,
+            episode_plan,
+        )
+        if len(segment_items) < segment_min or dialogue_errors or content_errors:
             raise RuntimeError(
                 f"章节 {analysis.chapter_id} 第 {segment_index} 段镜头密度不足："
-                f"{len(segment_items)}/{segment_min}"
+                f"{len(segment_items)}/{segment_min}；"
+                f"对白校验：{'；'.join(dialogue_errors) or '通过'}"
+                f"；内容校验：{'；'.join(content_errors) or '通过'}"
             )
         raw_shots.extend(
-            _expand_compact_beat(item, profiles=profiles)
+            _expand_compact_beat(
+                item,
+                profiles=profiles,
+                episode_plan=episode_plan,
+            )
             for item in segment_items
         )
 
@@ -645,6 +916,22 @@ def direct_chapter(
             f"{target.min_duration_seconds:.1f} 秒"
         )
 
+    # Duration normalization happens after parsing, so rebuild every time-coded
+    # prompt against the final duration rather than retaining stale boundaries.
+    for shot in shots:
+        shot.video_generation.motion_prompt = build_storyboard_motion_prompt(
+            shot_number=shot.shot_number,
+            duration_seconds=shot.duration_seconds,
+            scene_description=shot.scene_description,
+            subject_motion=shot.video_generation.subject_motion,
+            environment_motion=shot.video_generation.environment_motion,
+            entry_state=shot.continuity_plan.entry_state,
+            exit_state=shot.continuity_plan.exit_state,
+            dialogue=shot.dialogue,
+            sound_effect=shot.sound_effect,
+            dramatic_point=shot.emotion,
+        )
+
     # 重新编号确保连续
     for i, shot in enumerate(shots, start=1):
         shot.shot_number = i
@@ -654,10 +941,14 @@ def direct_chapter(
         shots,
         existing=character_visual_fingerprints,
     )
-    return Episode(
+    episode = Episode(
         episode_number=episode_number,
         episode_title=episode_title or f"第 {episode_number} 集",
-        chapter_ids=[analysis.chapter_id],
+        chapter_ids=(
+            list(episode_plan.source_chapter_ids)
+            if episode_plan
+            else [analysis.chapter_id]
+        ),
         artifact_binding_policy="explicit_only",
         character_profiles=profiles,
         character_visual_fingerprints=fingerprints,
@@ -665,9 +956,16 @@ def direct_chapter(
         character_generation_presets=dict(
             character_generation_presets or {}
         ),
+        narrative_plan=episode_plan,
         shots=shots,
         summary=analysis.summary[:500],
     )
+    payload = episode.model_dump(mode="json")
+    optimize_episode_audio_timing(
+        payload,
+        minimum_episode_seconds=target.min_duration_seconds,
+    )
+    return Episode.model_validate(payload)
 
 
 def _COMPACT_BEAT_OUTPUT_SCHEMA() -> dict[str, Any]:
@@ -679,27 +977,44 @@ def _COMPACT_BEAT_OUTPUT_SCHEMA() -> dict[str, Any]:
                 "items": {
                     "type": "object",
                     "properties": {
-                        "scene_description": {"type": "string"},
+                        "scene_description": {"type": "string", "minLength": 10},
                         "characters": {
                             "type": "array",
                             "items": {"type": "string"},
                         },
                         "location": {"type": "string"},
-                        "camera_angle": {"type": "string"},
-                        "camera_movement": {"type": "string"},
-                        "beat_type": {"type": "string"},
+                        "camera_angle": {
+                            "type": "string",
+                            "enum": ["close-up", "medium shot", "wide shot", "panoramic", "low angle", "high angle", "POV", "over-shoulder", "dutch angle"],
+                        },
+                        "camera_movement": {
+                            "type": "string",
+                            "enum": ["static", "pan", "tilt", "zoom", "dolly", "handheld", "crane", "tracking", "slow_push", "slow_pull", "pan_left", "pan_right", "tilt_up", "tilt_down", "still"],
+                        },
+                        "beat_type": {
+                            "type": "string",
+                            "enum": ["establish", "action", "reaction", "dialogue", "flashback"],
+                        },
                         "visible_action": {"type": "string"},
                         "expression": {"type": "string"},
                         "dialogue": {"type": "string"},
                         "sound_effect": {"type": "string"},
                         "duration_seconds": {"type": "number"},
-                        "visual_prompt": {"type": "string"},
+                        "visual_prompt": {"type": "string", "minLength": 20},
                         "lighting": {"type": "string"},
                         "atmosphere": {"type": "string"},
                         "emotion": {"type": "string"},
                         "motion_strength": {"type": "string"},
                         "screen_direction": {"type": "string"},
                         "transition_hint": {"type": "string"},
+                        "planned_scene_number": {"type": "integer", "minimum": 0},
+                        "dramatic_purpose": {"type": "string"},
+                        "source_event_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "value_before": {"type": "string"},
+                        "value_after": {"type": "string"},
                     },
                     "required": [
                         "scene_description",

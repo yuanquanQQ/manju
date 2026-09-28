@@ -83,3 +83,41 @@ def test_split_spoken_text_removes_speaker_prefix() -> None:
 
     assert len(parts) >= 2
     assert not parts[0].startswith("林浪：")
+
+
+def test_audio_timing_rebuilds_five_beat_prompt_for_final_duration() -> None:
+    episode = {
+        "shots": [
+            {
+                "shot_number": 1,
+                "scene_description": "秦风站在药圃左侧说出判断",
+                "dialogue": "秦风：" + "必须马上离开这里。" * 4,
+                "emotion": "紧迫",
+                "sound_effect": "风声",
+                "duration_seconds": 3.0,
+                "video_generation": {
+                    "duration_seconds": 3.0,
+                    "subject_motion": "秦风抬眼",
+                    "environment_motion": "衣摆轻动",
+                    "motion_prompt": "旧时间线",
+                },
+                "continuity_plan": {
+                    "entry_state": "秦风低头",
+                    "exit_state": "秦风抬眼",
+                },
+                "audio_generation": {
+                    "mode": "dialogue",
+                    "speaker": "秦风",
+                    "text": "必须马上离开这里。" * 4,
+                    "rate": "+0%",
+                },
+            }
+        ]
+    }
+
+    optimize_episode_audio_timing(episode, minimum_episode_seconds=0)
+
+    shot = episode["shots"][0]
+    duration = shot["duration_seconds"]
+    assert duration > 3.0
+    assert f"-{duration:g}秒｜落点拍" in shot["video_generation"]["motion_prompt"]

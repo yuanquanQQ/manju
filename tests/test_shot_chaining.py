@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from app.domain.video import VideoRenderSpec
-from app.services.gpu_service import GpuServerService
+from app.services.gpu_service import GpuServerService, _continuity_allows_chaining
 from app.services.video_service import VideoBatchResult, VideoClipResult, VideoRenderService
 from scripts.generate_episode_h3 import H3_GENERATION_REVISION, run
 
@@ -21,6 +21,33 @@ def _spec(shot_number: int, source: Path) -> VideoRenderSpec:
         height=480,
         engine_profile="minimax_h3_fl2va",
         native_audio_mode="native_full",
+    )
+
+
+def test_continuity_gate_requires_complete_matching_metadata() -> None:
+    assert _continuity_allows_chaining(
+        current_group="garden",
+        current_cast="秦风|秦三秋",
+        previous_group="garden",
+        previous_cast="秦风|秦三秋",
+    )
+    assert not _continuity_allows_chaining(
+        current_group="garden",
+        current_cast="秦风|林浪",
+        previous_group="garden",
+        previous_cast="秦风|秦三秋",
+    )
+    assert not _continuity_allows_chaining(
+        current_group="",
+        current_cast="",
+        previous_group="garden",
+        previous_cast="秦风",
+    )
+    assert _continuity_allows_chaining(
+        current_group="",
+        current_cast="",
+        previous_group="",
+        previous_cast="",
     )
 
 
@@ -40,7 +67,7 @@ def _patched_run(captured: list[list[str]]):
     return fake_run
 
 
-def test_extract_last_frame_uses_select_with_frame_count(tmp_path, monkeypatch):
+def test_extract_last_frame_uses_end_seek_when_frame_count_unknown(tmp_path, monkeypatch):
     service = VideoRenderService.__new__(VideoRenderService)
     service.ffmpeg_executable = Path("ffmpeg")
     captured: list[list[str]] = []
@@ -51,10 +78,10 @@ def test_extract_last_frame_uses_select_with_frame_count(tmp_path, monkeypatch):
     source.write_bytes(b"mp4")
     destination = tmp_path / "chained.png"
 
-    ok = service.extract_last_frame(source, destination, frame_count=124)
+    ok = service.extract_last_frame(source, destination)
     assert ok is True
     args = captured[0]
-    assert any("select=eq(n\\,123)" in arg for arg in args)
+    assert "-sseof" in args
     assert "-frames:v" in args
     assert destination.is_file()
 
@@ -143,6 +170,18 @@ def test_chained_prompt_with_reference_audio_adds_voice_continuity():
     prompt = GpuServerService._h3_positive_prompt(spec)
     assert "Voice continuity" in prompt
     assert "same speaker continuing" in prompt
+
+
+def test_h3_prompt_uses_authored_five_beat_timeline() -> None:
+    spec = _spec(1, Path("a.png")).model_copy(
+        update={"motion_prompt": "节拍划分\n拍1｜本镜0-0.5秒｜建立拍：保持构图"}
+    )
+
+    prompt = GpuServerService._h3_positive_prompt(spec)
+
+    assert "Authoritative shot timeline" in prompt
+    assert "拍1｜本镜0-0.5秒｜建立拍" in prompt
+    assert "Timeline:\n[0.00s-" not in prompt
 
 
 def test_off_mode_omits_voice_continuity_even_with_reference_audio():

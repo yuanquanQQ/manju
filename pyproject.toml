@@ -24,6 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "mypy>=1.11,<2",
     "pytest>=8.0,<9",
     "pytest-cov>=5.0,<7",
     "ruff>=0.6,<1",
@@ -38,6 +39,9 @@ py-modules = ["main"]
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+"app.prompts" = ["*.txt"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
@@ -45,7 +49,31 @@ addopts = "-q"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+extend-exclude = [
+    "scripts/gpu/download_t5.py",
+    "scripts/gpu/find_*.py",
+    "scripts/gpu/get_t5.py",
+    "scripts/gpu/list_*.py",
+    "scripts/gpu/restore_krea_ms.py",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+plugins = ["pydantic.mypy"]
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+    "app.domain.narrative",
+    "app.evaluation.narrative_quality",
+    "app.pipeline.story_bible",
+    "app.pipeline.story_plan_store",
+]
+disallow_untyped_defs = true

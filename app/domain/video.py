@@ -31,7 +31,7 @@ class VideoRenderSpec(BaseModel):
     environment_motion: str = Field(default="", max_length=1200)
     continuity_constraints: str = Field(default="", max_length=1600)
     negative_prompt: str = Field(default="", max_length=1600)
-    motion_prompt: str = Field(default="", max_length=1600)
+    motion_prompt: str = Field(default="", max_length=4000)
     native_audio_mode: NativeAudioMode = "ambience_sfx_music"
     dialogue_prompt: str = Field(default="", max_length=1600)
     sound_effect_prompt: str = Field(default="", max_length=800)

@@ -23,6 +23,7 @@ from app.core.doctor import run_diagnostics
 from app.core.logger import setup_logger
 from app.database.db import init_db, restore_database
 from app.domain.jobs import JobStatus
+from app.knowledge.knowledge_base import KnowledgeBase
 from app.pipeline.compile_novel import run_compile_novel
 from app.pipeline.generate_image import (
     generate_custom,
@@ -30,8 +31,6 @@ from app.pipeline.generate_image import (
 )
 from app.pipeline.ingest import run_ingest
 from app.pipeline.storyboard import generate_storyboard
-from app.knowledge.knowledge_base import KnowledgeBase
-from app.validator.validator import run_validation
 from app.services.job_service import (
     InvalidJobTransitionError,
     JobNotFoundError,
@@ -46,6 +45,7 @@ from app.services.project_service import (
     ensure_legacy_project_metadata,
     resolve_project_dir,
 )
+from app.validator.validator import run_validation
 
 app = typer.Typer(help="AI 漫剧生成系统 V1（novel2anime）", no_args_is_help=True)
 
@@ -363,7 +363,7 @@ def generate_cmd(
         comfy.health()
     except Exception as exc:
         typer.echo(f"ComfyUI 连接失败 ({settings.comfyui_url}): {exc}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     output_dir = root / "assets" / entity_type
     seed_val = None if seed < 0 else seed
@@ -409,7 +409,7 @@ def generate_custom_cmd(
         comfy.health()
     except Exception as exc:
         typer.echo(f"ComfyUI 连接失败 ({settings.comfyui_url}): {exc}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     output_dir = root / "assets" / "custom"
     seed_val = None if seed < 0 else seed
@@ -528,7 +528,7 @@ def knowledge_cmd(
         kb = KnowledgeBase(root)
         kb.export_all()
         typer.echo(f"知识文件已导出到: {kb.output_dir}")
-        typer.echo(f"  world.json / characters.json / timeline.json")
+        typer.echo("  world.json / characters.json / timeline.json")
 
     elif action == "search":
         setup_logger()

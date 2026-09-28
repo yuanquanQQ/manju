@@ -43,15 +43,15 @@ novel2anime 将一部长篇小说自动转化为分镜、画面、配音与成�
 长篇小说 (TXT / Markdown / 章节 JSON)
         │
         ▼
-小说导入 → 结构化分析 → 分镜剧本 → 角色定妆 → 关键帧生图 → 配音 → 视频生成 → 对口型 → 合成成片
+小说导入 → 结构化分析 → 职业编剧计划 → 分镜剧本 → 角色定妆 → 关键帧生图 → 配音 → 视频生成 → 对口型 → 合成成片
 ```
 
 核心思路是 **「先建世界,再拍戏」**:
 
 1. **建世界**:LLM 逐章抽取人物、地点、事件、对白与状态变化,连同原文证据写入 SQLite,
    并导出为知识库(人物档案 / 世界观 / 时间线)。
-2. **写剧本**:导演 Agent 把每章拆成 18-28 个镜头,为每个镜头生成画面描写、人物动作、
-   环境细节、英文生图提示词、运镜、转场与连续性约束。
+2. **写剧本**:编剧 Agent 先确定本集目标、冲突、代价、场次价值变化、高潮和集尾悬念，
+   导演 Agent 再按场次镜头预算生成画面描写、人物动作、运镜、转场与连续性约束。
 3. **拍画面**:以人物定妆照与视觉身份指纹锁跨镜头一致,经 ComfyUI 生图、MiniMax H3
    FL2VA 生成视频、CosyVoice / Edge TTS 配音、LatentSync 对口型,最后合成带中文字幕
    的成片。
@@ -67,9 +67,14 @@ novel2anime 将一部长篇小说自动转化为分镜、画面、配音与成�
 - 分析结果可复用(`input_hash` 去重),支持 `--start/--end` 范围控制与断点续跑。
 
 **分镜与导演 Agent**
-- 每章自动生成 18-28 个镜头,总时长 60-90 秒,符合影视节奏。
+- 先跨章节规划集边界，可把 2–4 个连续短章合并为一集，不再默认“一章一集”。
+- 先生成可人工审核的职业编剧计划，记录人物目标、阻力、策略、转折、结果、价值变化与来源事件。
+- 故事圣经持续保存人物弧光、未解伏笔和回收状态，后续剧集自动继承长线信息。
+- 镜头数与时长由场次重要性和编剧预算决定，不再以每章固定范围机械切分。
 - 每镜头包含场景描写、人物刻画、环境细节、英文生图提示词、运镜、时长与转场。
 - 镜头间连续性规划:入镜/出镜状态、动作阶段、匹配锚点、参考帧,跨镜保持人脸/服装/站位。
+- 改编对白必须绑定原始对白记录，可在保留意图与潜台词的前提下压缩为可表演台词。
+- 每集生成叙事质量报告，检查重要事件覆盖、场次完整度、情绪变化、镜头绑定、运镜多样性和对白追溯。
 
 **角色一致性**
 - 为每个角色构建「不可变身份指纹」文本锁(面容 / 眼型 / 发型 / 服装配色 / 标志配件)。
@@ -170,7 +175,7 @@ novel2anime 将一部长篇小说自动转化为分镜、画面、配音与成�
 ```text
 main.py import-novel <project> <source>    # 1. 导入小说 → 版本化标准章节
 main.py compile       <project>             # 2. 逐章结构化分析 → SQLite + analysis JSON
-main.py storyboard    <project>             # 3. 分镜剧本 → production/episodes/episode_N.json
+main.py storyboard    <project>             # 3. 编剧计划 + 分镜 → production/story_plans + episodes
 main.py generate      <project> --type character  # 4. (可选)CLI 生图;角色定妆多在 GUI 完成
      …（GUI:关键帧生图 → 视频 H3 → 配音 → 对口型 → 合成成片）
 ```
@@ -180,8 +185,9 @@ main.py generate      <project> --type character  # 4. (可选)CLI 生图;角色
 | 项目脚手架 | `app/services/project_service.py:create_project` | `projects/<slug>/`、`project.json`、`config.yaml` |
 | 小说导入 | `app/compiler/importer.py:import_novel` | `novel/chapters/ch_*.json` + `CompiledChapter` |
 | 结构化分析 | `app/compiler/analyzer.py:analyze_chapter` | `ChapterAnalysis` → `production/analysis/*.json` |
+| 职业编剧计划 | `app/agents/story_planner.py:plan_episode` | `production/story_plans/episode_*.json` |
 | 分镜生成 | `app/agents/director.py` + `app/pipeline/storyboard.py` | `production/episodes/episode_*.json` |
-| 节奏 / 时长 | `app/pipeline/pacing.py` | 目标镜头数、60-90 秒集时长 |
+| 节奏 / 时长 | `app/pipeline/pacing.py` | 按场次预算确定目标镜头数与集时长 |
 | 角色一致性 | `app/pipeline/character_identity.py` | 每角色「视觉身份指纹」文本 |
 | 生图 | ComfyUI(本地/远端)+ `image_models` | 定妆照、分镜首帧 |
 | 视频 | MiniMax H3 FL2VA / 漫画动效 | 逐镜头 MP4 |
@@ -466,7 +472,7 @@ novel2anime/
 │   ├── high_quality_image/  # 两阶段身份锁定关键帧
 │   └── minimax_h3/          # H3 FL2VA 视频任务（build_prompt 官方图 / build_t8_prompt T8 图，--engine 切换）
 ├── docs/                    # 文档（见“文档索引”）
-├── tests/                   # 160 个 pytest 单元测试
+├── tests/                   # 200+ 个 pytest 单元测试
 ├── projects/                # （运行时）项目数据，不入库
 ├── models/                  # （运行时）本地模型
 ├── logs/                    # （运行时）日志
@@ -494,8 +500,12 @@ projects/jueshi/
 ├── novel/                     # 源文档与标准章节
 ├── assets/                    # characters / locations / voices 等资源包
 ├── production/
+│   ├── adaptation_outline.json # 跨章节组集边界与开闭场钩子
+│   ├── story_bible.json        # 长线人物弧光、伏笔状态与世界规则
 │   ├── episodes/              # 分镜脚本 episode_001.json
 │   ├── analysis/              # 章节分析 JSON
+│   ├── story_plans/           # 集目标、场次、高潮、悬念与叙事来源
+│   ├── quality/               # 每集叙事质量评分与门禁失败原因
 │   ├── knowledge/             # 知识库导出
 │   ├── shots/                 # 分镜图片与生成记录
 │   ├── video_inputs/          # 视频任务首帧
@@ -516,7 +526,7 @@ projects/jueshi/
 
 ## 测试
 
-38 个本地 pytest 单元测试,覆盖导入、分析、分镜、连续性、生图工作流、配音、口型规划、
+207 个本地 pytest 测试,覆盖导入、分析、跨章节组集、编剧计划、叙事质量、分镜、连续性、生图工作流、配音、口型规划、
 任务系统、GUI(offscreen Qt)等模块。**无需 GPU、外部服务或真实 LLM**——远程调用均被
 模拟 / monkeypatch。
 
@@ -529,6 +539,7 @@ projects/jueshi/
 
 ```powershell
 .\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m mypy app\domain\narrative.py app\evaluation\narrative_quality.py app\pipeline\story_bible.py app\pipeline\story_plan_store.py
 ```
 
 > 注意:Windows 上运行测试请使用 `.venv` 解释器;涉及磁盘的测试请使用 pytest 的
@@ -546,6 +557,7 @@ projects/jueshi/
 | [docs/04-图片不满意时的修改功能.md](docs/04-图片不满意时的修改功能.md) | 图片修改 / 重生成的界面操作与写法建议 |
 | [docs/开发计划/README.md](docs/开发计划/README.md) | 开发计划总览(产品目标、架构、十阶段、里程碑) |
 | [docs/high_quality_personal_workflow.md](docs/high_quality_personal_workflow.md) | 个人高质量生产工作流(六阶段、审核门禁、当前模型) |
+| [docs/data_policy.md](docs/data_policy.md) | 小说原文、生成资产与仓库代码的版权隔离和迁移规范 |
 | [HANDOFF.md](HANDOFF.md) | 交接文档(部分内容已过时,仅作工程史参考) |
 
 > `docs/01-启动指南.md` 与两份 `docs/工作记录_*.md` 明确标注为历史 / 时点快照,不应视为

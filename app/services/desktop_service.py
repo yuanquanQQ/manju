@@ -19,12 +19,14 @@ from app.compiler.repository import persist_import
 from app.core.config import settings
 from app.core.files import atomic_write_json
 from app.database.db import init_db
+from app.domain.narrative import EpisodePlan
 from app.pipeline.audio_timing import (
     AudioTimingSummary,
     optimize_episode_audio_timing,
 )
 from app.pipeline.compile_novel import run_compile_novel
 from app.pipeline.continuity import plan_episode_continuity
+from app.pipeline.story_plan_store import load_episode_plan, save_episode_plan
 from app.pipeline.storyboard import generate_storyboard
 from app.services.character_presets import DEFAULT_CHARACTER_LAYOUT_ID
 from app.services.image_models import image_model_label
@@ -289,6 +291,7 @@ class ShotSnapshot:
     handle_frames: int = 8
     candidate_count: int = 1
     continuity_group: str = "scene_01"
+    cast_signature: str = ""
     beat_type: str = "dialogue"
     action_phase: str = "anticipation"
     entry_state: str = ""
@@ -329,6 +332,11 @@ class ShotSnapshot:
     lip_sync_status: str = "disabled"
     lip_sync_score: float = 0.0
     lip_sync_output_path: Path | None = None
+    narrative_scene_number: int = 0
+    dramatic_purpose: str = ""
+    story_value_before: str = ""
+    story_value_after: str = ""
+    source_event_ids: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -348,6 +356,12 @@ class EpisodeSnapshot:
     shots: list[ShotSnapshot]
     dubbed_video_path: Path | None = None
     dubbing_manifest_path: Path | None = None
+    story_plan_path: Path | None = None
+    story_goal: str = ""
+    central_conflict: str = ""
+    climax: str = ""
+    cliffhanger: str = ""
+    emotional_arc: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -471,6 +485,16 @@ class DesktopProjectService:
                 for index, item in enumerate(value.get("shots") or [], start=1)
                 if isinstance(item, dict)
             ]
+            story_plan_path = (
+                root
+                / "production"
+                / "story_plans"
+                / f"episode_{episode_number:03d}.json"
+            )
+            story_plan = value.get("narrative_plan")
+            if not isinstance(story_plan, dict) and story_plan_path.is_file():
+                story_plan = self._read_json(story_plan_path)
+            story_plan = story_plan if isinstance(story_plan, dict) else {}
             result.append(
                 EpisodeSnapshot(
                     number=episode_number,
@@ -496,6 +520,20 @@ class DesktopProjectService:
                         root,
                         str(dubbing.get("manifest_file") or ""),
                     ),
+                    story_plan_path=(
+                        story_plan_path if story_plan else None
+                    ),
+                    story_goal=str(story_plan.get("episode_goal") or ""),
+                    central_conflict=str(
+                        story_plan.get("central_conflict") or ""
+                    ),
+                    climax=str(story_plan.get("climax") or ""),
+                    cliffhanger=str(story_plan.get("cliffhanger") or ""),
+                    emotional_arc=[
+                        str(item)
+                        for item in (story_plan.get("emotional_arc") or [])
+                        if str(item).strip()
+                    ],
                 )
             )
         return result
@@ -569,6 +607,40 @@ class DesktopProjectService:
                 atomic_write_json(path, value)
                 return path
         raise KeyError(f"分镜中不存在镜头: {shot_number}")
+
+    def save_story_plan_summary(
+        self,
+        slug: str,
+        episode_number: int,
+        *,
+        episode_goal: str,
+        central_conflict: str,
+        climax: str,
+        cliffhanger: str,
+    ) -> Path:
+        root = (self.projects_dir / slug).resolve()
+        plan = load_episode_plan(root, episode_number).model_copy(
+            update={
+                "episode_goal": episode_goal.strip(),
+                "central_conflict": central_conflict.strip(),
+                "climax": climax.strip(),
+                "cliffhanger": cliffhanger.strip(),
+            },
+        )
+        return save_episode_plan(root, episode_number, plan)
+
+    def load_story_plan(self, slug: str, episode_number: int) -> EpisodePlan:
+        root = (self.projects_dir / slug).resolve()
+        return load_episode_plan(root, episode_number)
+
+    def save_story_plan(
+        self,
+        slug: str,
+        episode_number: int,
+        plan: EpisodePlan | dict[str, object],
+    ) -> Path:
+        root = (self.projects_dir / slug).resolve()
+        return save_episode_plan(root, episode_number, plan)
 
     def set_episode_artifact_binding_policy(
         self,
@@ -1943,6 +2015,9 @@ class DesktopProjectService:
         continuity = item.get("continuity_plan") or {}
         if not isinstance(continuity, dict):
             continuity = {}
+        narrative = item.get("narrative_binding") or {}
+        if not isinstance(narrative, dict):
+            narrative = {}
         lip_sync = item.get("lip_sync") or {}
         if not isinstance(lip_sync, dict):
             lip_sync = {}
@@ -2074,6 +2149,7 @@ class DesktopProjectService:
             continuity_group=str(
                 continuity.get("group_id") or "scene_01"
             ),
+            cast_signature=str(continuity.get("cast_signature") or ""),
             beat_type=str(continuity.get("beat_type") or "dialogue"),
             action_phase=str(
                 continuity.get("action_phase") or "anticipation"
@@ -2087,6 +2163,15 @@ class DesktopProjectService:
             reference_denoise=float(
                 continuity.get("reference_denoise") or 0.76
             ),
+            narrative_scene_number=int(narrative.get("scene_number") or 0),
+            dramatic_purpose=str(narrative.get("dramatic_purpose") or ""),
+            story_value_before=str(narrative.get("value_before") or ""),
+            story_value_after=str(narrative.get("value_after") or ""),
+            source_event_ids=[
+                str(event_id)
+                for event_id in (narrative.get("source_event_ids") or [])
+                if str(event_id).strip()
+            ],
             source_image=source_image,
             image_candidates=image_candidates,
             image_qc_status=image_qc_status,

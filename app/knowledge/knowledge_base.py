@@ -250,7 +250,7 @@ class KnowledgeBase:
         q_embed = self._simple_embed([query]).astype(np.float32)
         scores, indices = index.search(q_embed, min(top_k, len(entities)))
         results: list[SearchResult] = []
-        for score, idx_ptr in zip(scores[0], indices[0]):
+        for score, idx_ptr in zip(scores[0], indices[0], strict=True):
             if idx_ptr < 0 or idx_ptr >= len(entities):
                 continue
             e = entities[int(idx_ptr)]

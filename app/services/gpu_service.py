@@ -36,7 +36,6 @@ from app.services.video_service import (
     VideoBatchResult,
     VideoClipResult,
     VideoRenderService,
-    normalize_frame_count,
 )
 
 # MiniMax H3 workflow engine. The T8 node graph (comfyui-minimax-h3-audio-T8)
@@ -53,6 +52,28 @@ H3_GENERATION_REVISION = "h3_t8_chained_v1"
 # Map motion_strength to actual T8 shift_video values. Higher shift = more
 # motion. The default 12.0 corresponds to "medium"; low/high scale around it.
 _MOTION_STRENGTH_SHIFT = {"low": 7.0, "medium": 12.0, "high": 18.0}
+
+
+def _continuity_allows_chaining(
+    *,
+    current_group: str,
+    current_cast: str,
+    previous_group: str,
+    previous_cast: str,
+) -> bool:
+    """Allow legacy chaining only when neither shot carries continuity data."""
+
+    has_metadata = any(
+        (current_group, current_cast, previous_group, previous_cast)
+    )
+    if not has_metadata:
+        return True
+    return bool(
+        current_group
+        and previous_group
+        and current_group == previous_group
+        and current_cast == previous_cast
+    )
 
 
 @dataclass(slots=True)
@@ -1325,6 +1346,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
             previous_chain_video: Path | None = None
             previous_chain_group = ""
             previous_chain_cast = ""
+            previous_chain_speaker = ""
             for shot_index, spec in enumerate(specs, start=1):
                 # Apply continuity-gated shot chaining before uploading: replace
                 # source_image with the previous clip's last frame and attach
@@ -1338,26 +1360,31 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                     plan = plan if isinstance(plan, dict) else {}
                     cur_group = str(plan.get("group_id") or "")
                     cur_cast = str(plan.get("cast_signature") or "")
-                    has_continuity = bool(cur_group) or bool(cur_cast)
+                    cur_speaker = str(plan.get("speaker") or "")
                     # Only chain within the same scene group and identical cast
                     # when continuity data is present; otherwise chain
                     # unconditionally (legacy behaviour for un-planned episodes).
-                    continuity_allows = (
-                        (cur_group == previous_chain_group and cur_cast == previous_chain_cast)
-                        if has_continuity
-                        else True
+                    continuity_allows = _continuity_allows_chaining(
+                        current_group=cur_group,
+                        current_cast=cur_cast,
+                        previous_group=previous_chain_group,
+                        previous_cast=previous_chain_cast,
                     )
                     if continuity_allows:
                         chained_frame = chain_dir / f"shot_{spec.shot_number:03d}_chained.png"
                         chained_audio = chain_dir / f"shot_{spec.shot_number:03d}_chained_ref.wav"
-                        frame_count = normalize_frame_count(round(spec.duration_seconds * 24))
                         chain_updates: dict[str, Any] = {}
                         if chain_video_service.extract_last_frame(
-                            previous_chain_video, chained_frame, frame_count=frame_count
+                            previous_chain_video, chained_frame, frame_count=None
                         ):
                             chain_updates["source_image"] = chained_frame
                             chain_updates["chained_from_previous"] = True
-                        if chain_video_service.extract_last_audio(
+                        same_speaker = bool(
+                            cur_speaker
+                            and previous_chain_speaker
+                            and cur_speaker == previous_chain_speaker
+                        )
+                        if same_speaker and chain_video_service.extract_last_audio(
                             previous_chain_video, chained_audio, seconds=2.0
                         ):
                             chain_updates["reference_audio"] = chained_audio
@@ -1656,6 +1683,7 @@ printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
                     plan = plan if isinstance(plan, dict) else {}
                     previous_chain_group = str(plan.get("group_id") or "")
                     previous_chain_cast = str(plan.get("cast_signature") or "")
+                    previous_chain_speaker = str(plan.get("speaker") or "")
                 heartbeat_job(job.id, shot_index / len(specs) * 0.95)
 
             elapsed = time.monotonic() - started
@@ -1915,6 +1943,24 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
                 f"{handle_seconds:.2f}s while natural breathing and weight shift "
                 "initiate the action."
             )
+        generated_timeline = (
+            "Timeline:\n"
+            f"[0.00s-{setup_end:.2f}s] {opening}\n"
+            f"[{setup_end:.2f}s-{action_end:.2f}s] Perform one physically "
+            f"coherent action: {GpuServerService._translate_motion(spec.subject_motion.strip())}. "
+            f"Environment motion: {GpuServerService._translate_motion(spec.environment_motion.strip())}.\n"
+            f"[{action_end:.2f}s-{duration:.2f}s] Complete the action with "
+            f"natural momentum and settle. Hold the final boundary for "
+            f"approximately {handle_seconds:.2f}s. {end_frame} "
+            f"{transition_instruction}"
+        )
+        authored_timeline = spec.motion_prompt.strip()
+        timeline = (
+            "Authoritative shot timeline. Follow every time range and continuity "
+            f"instruction exactly:\n{authored_timeline}"
+            if authored_timeline
+            else generated_timeline
+        )
         return "\n\n".join(
             part
             for part in (
@@ -1922,17 +1968,7 @@ printf '%s' "$object_info" | grep -q '"ConditioningZeroOut"'
                     "Realistic live-action Chinese xianxia cinematic shot. "
                     f"Scene overview: {spec.scene_description.strip()}"
                 ),
-                (
-                    "Timeline:\n"
-                    f"[0.00s-{setup_end:.2f}s] {opening}\n"
-                    f"[{setup_end:.2f}s-{action_end:.2f}s] Perform one physically "
-                    f"coherent action: {GpuServerService._translate_motion(spec.subject_motion.strip() or spec.motion_prompt.strip())}. "
-                    f"Environment motion: {GpuServerService._translate_motion(spec.environment_motion.strip())}.\n"
-                    f"[{action_end:.2f}s-{duration:.2f}s] Complete the action with "
-                    f"natural momentum and settle. Hold the final boundary for "
-                    f"approximately {handle_seconds:.2f}s. {end_frame} "
-                    f"{transition_instruction}"
-                ),
+                timeline,
                 (
                     f"Camera: {spec.camera_movement}; motion strength "
                     f"{spec.motion_strength}; one continuous shot, stable horizon, "

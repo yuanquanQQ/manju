@@ -116,6 +116,7 @@ from app.services.video_service import (
 )
 from app.services.voice_library_service import VoiceLibraryService
 from app.ui.asset_library_page import AssetLibraryPage
+from app.ui.story_plan_editor import StoryPlanEditorDialog
 from app.ui.video_page import VideoGenerationPage
 from app.ui.voice_library_page import VoiceLibraryPage
 
@@ -1478,6 +1479,8 @@ class CharactersPage(QWidget):
 
 class StoryboardPage(QWidget):
     save_prompt_requested = Signal(int, int, str, str)
+    save_story_plan_requested = Signal(int, str, str, str, str)
+    edit_story_plan_requested = Signal(int)
     generate_images_requested = Signal(int)
     regenerate_sequence_requested = Signal(int)
     regenerate_rejected_requested = Signal(int)
@@ -1545,6 +1548,46 @@ class StoryboardPage(QWidget):
         episode_row.addWidget(QLabel("剧集"))
         episode_row.addWidget(self.episode_combo)
         layout.addLayout(episode_row)
+        story_card = QFrame()
+        story_card.setObjectName("card")
+        story_layout = QGridLayout(story_card)
+        story_layout.setContentsMargins(18, 12, 18, 12)
+        story_layout.addWidget(QLabel("编剧计划"), 0, 0)
+        self.story_arc = QLabel("尚无职业编剧计划")
+        self.story_arc.setObjectName("muted")
+        self.story_arc.setWordWrap(True)
+        story_layout.addWidget(self.story_arc, 0, 1, 1, 3)
+        self.story_goal = QLineEdit()
+        self.story_goal.setPlaceholderText("本集主角目标")
+        self.story_conflict = QLineEdit()
+        self.story_conflict.setPlaceholderText("本集核心冲突")
+        self.story_climax = QLineEdit()
+        self.story_climax.setPlaceholderText("本集高潮")
+        self.story_cliffhanger = QLineEdit()
+        self.story_cliffhanger.setPlaceholderText("集尾悬念")
+        story_layout.addWidget(QLabel("目标"), 1, 0)
+        story_layout.addWidget(self.story_goal, 1, 1)
+        story_layout.addWidget(QLabel("冲突"), 1, 2)
+        story_layout.addWidget(self.story_conflict, 1, 3)
+        story_layout.addWidget(QLabel("高潮"), 2, 0)
+        story_layout.addWidget(self.story_climax, 2, 1)
+        story_layout.addWidget(QLabel("悬念"), 2, 2)
+        story_layout.addWidget(self.story_cliffhanger, 2, 3)
+        self.save_story_plan = QPushButton("保存编剧计划")
+        self.save_story_plan.setObjectName("secondaryButton")
+        self.save_story_plan.clicked.connect(self._save_story_plan)
+        self.edit_story_plan = QPushButton("编辑完整计划")
+        self.edit_story_plan.setObjectName("primaryButton")
+        self.edit_story_plan.clicked.connect(
+            lambda: (
+                self.edit_story_plan_requested.emit(self.episode.number)
+                if self.episode
+                else None
+            )
+        )
+        story_layout.addWidget(self.edit_story_plan, 3, 2)
+        story_layout.addWidget(self.save_story_plan, 3, 3)
+        layout.addWidget(story_card)
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
             ["镜头", "画面描述", "连续承接", "风格", "首帧", "质检"]
@@ -1681,7 +1724,25 @@ class StoryboardPage(QWidget):
             self.reject_image.setEnabled(False)
             self.revise_image.setEnabled(False)
             self.image_history.setEnabled(False)
+            self.story_goal.clear()
+            self.story_conflict.clear()
+            self.story_climax.clear()
+            self.story_cliffhanger.clear()
+            self.story_arc.setText("尚无职业编剧计划")
+            self.save_story_plan.setEnabled(False)
+            self.edit_story_plan.setEnabled(False)
             return
+        self.story_goal.setText(episode.story_goal)
+        self.story_conflict.setText(episode.central_conflict)
+        self.story_climax.setText(episode.climax)
+        self.story_cliffhanger.setText(episode.cliffhanger)
+        self.story_arc.setText(
+            "情绪轨迹：" + " → ".join(episode.emotional_arc)
+            if episode.emotional_arc
+            else "本集尚未记录情绪轨迹"
+        )
+        self.save_story_plan.setEnabled(bool(episode.story_plan_path))
+        self.edit_story_plan.setEnabled(bool(episode.story_plan_path))
         ready_count = sum(bool(shot.source_image) for shot in episode.shots)
         approved_count = sum(
             shot.image_qc_status == "approved" for shot in episode.shots
@@ -1796,6 +1857,10 @@ class StoryboardPage(QWidget):
             else "本连续组起始镜头"
         )
         self.continuity_summary.setText(
+            f"场次：{shot.narrative_scene_number or '未绑定'}  ·  "
+            f"戏剧功能：{shot.dramatic_purpose or '待补充'}  ·  "
+            f"价值变化：{shot.story_value_before or '未标注'} → "
+            f"{shot.story_value_after or '未标注'}\n"
             f"连续组：{shot.continuity_group}  ·  节拍：{shot.beat_type}/"
             f"{shot.action_phase}  ·  视觉参考：{reference}  ·  "
             f"重绘幅度：{shot.reference_denoise:.2f}\n"
@@ -1821,6 +1886,17 @@ class StoryboardPage(QWidget):
             self.current_shot_number,
             self.prompt_editor.toPlainText().strip(),
             self.style.currentText(),
+        )
+
+    def _save_story_plan(self) -> None:
+        if not self.episode:
+            return
+        self.save_story_plan_requested.emit(
+            self.episode.number,
+            self.story_goal.text().strip(),
+            self.story_conflict.text().strip(),
+            self.story_climax.text().strip(),
+            self.story_cliffhanger.text().strip(),
         )
 
     def _open_current_revision(self) -> None:
@@ -2929,6 +3005,8 @@ class MainWindow(QMainWindow):
         self.characters.unlock_requested.connect(self.unlock_character_image)
         self.characters.check_server_requested.connect(self.check_server)
         self.storyboard.save_prompt_requested.connect(self.save_shot_prompt)
+        self.storyboard.save_story_plan_requested.connect(self.save_story_plan)
+        self.storyboard.edit_story_plan_requested.connect(self.edit_story_plan)
         self.storyboard.generate_images_requested.connect(
             self.generate_missing_shot_images
         )
@@ -4000,6 +4078,59 @@ class MainWindow(QMainWindow):
         self.set_activity("镜头提示词已保存", "good")
         self.append_log(f"已保存镜头 {shot_number:02d} 的提示词：{style}")
 
+    def save_story_plan(
+        self,
+        episode_number: int,
+        episode_goal: str,
+        central_conflict: str,
+        climax: str,
+        cliffhanger: str,
+    ) -> None:
+        if not self.current_project:
+            return
+        try:
+            self.project_service.save_story_plan_summary(
+                self.current_project,
+                episode_number,
+                episode_goal=episode_goal,
+                central_conflict=central_conflict,
+                climax=climax,
+                cliffhanger=cliffhanger,
+            )
+            self.refresh_project()
+        except Exception as exc:
+            self.show_error("编剧计划保存失败", str(exc))
+            return
+        self.set_activity("编剧计划已保存", "good")
+        self.append_log(f"已保存第 {episode_number} 集编剧计划")
+
+    def edit_story_plan(self, episode_number: int) -> None:
+        if not self.current_project:
+            return
+        try:
+            plan = self.project_service.load_story_plan(
+                self.current_project,
+                episode_number,
+            )
+        except Exception as exc:
+            self.show_error("编剧计划读取失败", str(exc))
+            return
+        dialog = StoryPlanEditorDialog(plan, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self.project_service.save_story_plan(
+                self.current_project,
+                episode_number,
+                dialog.plan,
+            )
+            self.refresh_project()
+        except Exception as exc:
+            self.show_error("编剧计划保存失败", str(exc))
+            return
+        self.set_activity("完整编剧计划已保存", "good")
+        self.append_log(f"已保存第 {episode_number} 集完整编剧计划")
+
     def set_shot_image_qc(
         self,
         episode_number: int,
@@ -4700,6 +4831,21 @@ class MainWindow(QMainWindow):
                         progress_callback=group_progress,
                         clip_callback=persist_completed_clip,
                         chain_shots=True,
+                        shot_continuity=[
+                            {
+                                "group_id": str(
+                                    payload.get("continuity_group") or ""
+                                ),
+                                "cast_signature": str(
+                                    payload.get("cast_signature") or ""
+                                ),
+                                "speaker": str(payload.get("speaker") or ""),
+                            }
+                            for payload in payloads
+                            if str(
+                                payload.get("engine_profile") or "comic_motion"
+                            ) == profile
+                        ],
                     )
                 batches.append(batch)
             return VideoBatchResult(

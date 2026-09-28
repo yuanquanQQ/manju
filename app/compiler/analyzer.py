@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.adapters.llm import OpenAICompatibleLLM, StructuredLLM
 from app.compiler.chunking import TextChunk, split_text_chunks
 from app.core.config import settings
+from app.core.prompts import load_prompt
 from app.domain.novel import (
     AnalysisProvenance,
     ChapterAnalysis,
@@ -24,17 +25,7 @@ from app.domain.novel import (
 
 PROMPT_VERSION = "chapter-analysis-v1"
 
-SYSTEM_PROMPT = """你是中文小说事实抽取器。
-
-规则：
-1. 只抽取当前文本块中明确出现的事实，不判断是否为全书首次出现。
-2. 每一项必须提供原文中连续、逐字一致、最长 300 字的 quote；只保留能证明该项的最短片段，不要复制整段或整块。
-3. 不补写、推测或改写 quote；找不到原文证据就不要输出该项。
-4. mentions 包含本块所有重要人物、地点、组织、道具、能力或生物提及。
-5. events 按本块发生顺序输出，importance 为 1-5。
-6. dialogues 只提取能判断说话人的重要对白。
-7. state_changes 只提取本块明确发生的属性或关系变化。
-8. 禁止输出任何思考过程、分析文本或解释，回复必须且只能是纯 JSON 对象。"""
+SYSTEM_PROMPT = load_prompt("chapter_analyzer")
 
 
 

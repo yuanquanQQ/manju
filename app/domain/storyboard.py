@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.narrative import EpisodePlan
+
 
 class CharacterAppearance(BaseModel):
     """单个人物在当前镜头中的外貌描写。"""
@@ -74,7 +76,7 @@ class ShotVideoGeneration(BaseModel):
     environment_motion: str = Field(default="", max_length=1200)
     continuity_constraints: str = Field(default="", max_length=1600)
     negative_prompt: str = Field(default="", max_length=1600)
-    motion_prompt: str = Field(default="", max_length=1600)
+    motion_prompt: str = Field(default="", max_length=4000)
     end_frame_prompt: str = Field(default="", max_length=2400)
     end_frame_prompt_version: int = Field(default=0, ge=0)
     routing_reason: str = Field(default="", max_length=500)
@@ -253,6 +255,18 @@ class ShotLipSyncGeneration(BaseModel):
     error: str = Field(default="", max_length=1000)
 
 
+class ShotNarrativeBinding(BaseModel):
+    """Trace one visual shot back to its dramatic scene and source facts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    scene_number: int = Field(default=0, ge=0)
+    dramatic_purpose: str = Field(default="", max_length=300)
+    source_event_ids: list[str] = Field(default_factory=list)
+    value_before: str = Field(default="", max_length=120)
+    value_after: str = Field(default="", max_length=120)
+
+
 class Shot(BaseModel):
     """单个镜头，包含视觉级场景描写和人物刻画。"""
 
@@ -327,6 +341,10 @@ class Shot(BaseModel):
         default_factory=ShotLipSyncGeneration,
         description="说话人物、目标脸和口型同步任务参数",
     )
+    narrative_binding: ShotNarrativeBinding = Field(
+        default_factory=ShotNarrativeBinding,
+        description="镜头对应的场次、戏剧功能、价值变化与来源事件",
+    )
 
 
 class Episode(BaseModel):
@@ -346,5 +364,6 @@ class Episode(BaseModel):
     character_visual_fingerprints: dict[str, str] = Field(default_factory=dict)
     character_styles: dict[str, str] = Field(default_factory=dict)
     character_generation_presets: dict[str, str] = Field(default_factory=dict)
+    narrative_plan: EpisodePlan | None = None
     shots: list[Shot] = Field(min_length=1)
     summary: str = Field(default="", max_length=500, description="本集剧情梗概")

@@ -2,7 +2,6 @@
 
 import inspect
 import tarfile
-from pathlib import Path
 
 from app.core.config import settings
 from app.services.gpu_service import GpuServerService, GpuStatus

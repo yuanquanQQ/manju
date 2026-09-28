@@ -7,6 +7,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from app.pipeline.video_prompt import refresh_episode_motion_prompts
+
 _HAN_RE = re.compile(r"[\u3400-\u9fff]")
 _WORD_RE = re.compile(r"[A-Za-z]+(?:['’-][A-Za-z]+)?|\d+(?:\.\d+)?")
 _SENTENCE_BREAK_RE = re.compile(r"(?<=[。！？!?；;])")
@@ -266,6 +268,7 @@ def optimize_episode_audio_timing(
                 break
         if not adjusted:
             break
+    refresh_episode_motion_prompts(episode)
     return AudioTimingSummary(
         shot_count=len(shots),
         changed_shots=changed,

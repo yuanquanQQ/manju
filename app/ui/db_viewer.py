@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """数据库浏览面板 — Streamlit 可视化。
 
 用法: streamlit run app/ui/db_viewer.py

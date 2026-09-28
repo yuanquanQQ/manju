@@ -2,11 +2,14 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+build/
+dist/
 .venv/
 .venv.broken*/
 .pytest_cache/
 .ruff_cache/
 .test-tmp/
+.pt*/
 .coverage
 htmlcov/
 
@@ -14,6 +17,14 @@ htmlcov/
 logs/
 projects/
 chapters_backup/
+local-data/
+source-material/
+**/novel/chapters/
+**/production/analysis/
+**/production/episodes/
+**/production/story_plans/
+**/production/quality/
+**/outputs/
 
 # 本地配置（包含 LLM 服务地址、模型名等）
 .env

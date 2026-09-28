@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from app.agents.director import _expand_compact_beat, _parse_shots
 from app.core.config import settings

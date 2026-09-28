@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 
 from app.pipeline.audio_timing import optimize_episode_audio_timing
+from app.pipeline.video_prompt import (
+    build_bridge_prompt,
+    build_storyboard_motion_prompt,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 EPISODE_PATH = ROOT / "projects/jueshi/production/episodes/episode_001.json"
@@ -928,10 +932,9 @@ def main() -> None:
         reference_allowed = bool(
             previous_number and cast_signature == previous_cast and cast_signature
         )
-        bridge = (
-            f"开头先稳定保持“{entry_state}”约0.4秒；全镜只完成一个主要动作，"
-            f"结束于“{exit_state}”，随后稳定停留约0.6秒作为剪辑余量。动作不中途反向，"
-            "人物不跳位、不跨180度轴线，切点前不眨眼、不转头、不遮脸。"
+        bridge = build_bridge_prompt(
+            entry_state=entry_state,
+            exit_state=exit_state,
         )
         keyframe = (
             "START KEYFRAME FOR A CONTINUOUS EDITABLE SHOT. Preserve the locked three-view cast "
@@ -961,10 +964,25 @@ def main() -> None:
             f"eyeline and {screen_direction} screen direction. Begin from: {entry_state}. "
             f"Settle at: {exit_state}."
         )
-        motion = (
-            f"先稳定0.4秒承接上一镜状态：{entry_state}。随后只完成这一动作：{exit_state}。"
-            "动作幅度克制、速度真实、重心与脚底接触可信；镜头末尾稳定0.6秒，供下一镜匹配剪辑。"
-            "不得追加第二动作，不突然转身，不跨轴，不改变人物脸、发型、服装、道具、光线和背景地标。"
+        sound_design = (
+            "延续全片同一清晨药圃底噪：微风、叶片、细弱水流与真实衣料声；"
+            "只为画面可见动作增加一次对应声音，不做夸张撞击，不在切点突然静音或重置环境声。"
+        )
+        environment_motion = (
+            "低处晨雾和近处叶片持续同方向轻微运动，幅度恒定；"
+            "背景建筑、山体和远景人物保持稳定"
+        )
+        motion = build_storyboard_motion_prompt(
+            shot_number=number,
+            duration_seconds=duration,
+            scene_description=scene,
+            subject_motion=exit_state,
+            environment_motion=environment_motion,
+            entry_state=entry_state,
+            exit_state=exit_state,
+            dialogue=dialogue,
+            sound_effect=sound_design,
+            dramatic_point=emotion,
         )
         end_prompt = (
             "END KEYFRAME OF THE SAME UNBROKEN SHOT. The one requested action is complete and the "
@@ -1009,17 +1027,17 @@ def main() -> None:
                 "video_generation": {
                     "engine_profile": "minimax_h3_fl2va",
                     "subject_motion": exit_state,
-                    "environment_motion": "低处晨雾和近处叶片持续同方向轻微运动，幅度恒定；背景建筑、山体和远景人物保持稳定",
+                    "environment_motion": environment_motion,
                     "continuity_constraints": continuity[:1600],
                     "negative_prompt": VIDEO_NEGATIVE,
-                    "motion_prompt": motion[:1600],
+                    "motion_prompt": motion[:4000],
                     "end_frame_prompt": end_prompt[:2400],
                     "end_frame_prompt_version": 6,
                     "routing_reason": "按重写后的单动作镜头与首尾稳定帧生成，优先保证身份、轴线和剪辑余量",
                     "routing_version": 5,
                     "native_audio_mode": "native_full",
                     "dialogue_prompt": dialogue,
-                    "sound_effect_prompt": "延续全片同一清晨药圃底噪：微风、叶片、细弱水流与真实衣料声；只为画面可见动作增加一次对应声音，不做夸张撞击，不在切点突然静音或重置环境声。",
+                    "sound_effect_prompt": sound_design,
                     "music_prompt": "不生成独立旋律、鼓点、片头或片尾式收束；仅保留极轻、连续、无歌词的低频氛围底色，为后期整集统一配乐和对白留出空间，镜头切点前后响度与音色一致。",
                     "camera_movement": camera_movement,
                     "motion_strength": "medium"
@@ -1077,6 +1095,8 @@ def main() -> None:
         last_cast_by_group[group_id] = cast_signature
 
     episode["episode_title"] = "重生十万年"
+    episode.pop("chapter_id", None)
+    episode["chapter_ids"] = ["ch_000001"]
     episode["character_profiles"] = PROFILES
     episode["character_visual_fingerprints"] = {
         name: f"{APPEARANCE[name]}；{CLOTHING[name]}；正面、严格左侧面、背面三视图身份必须完全一致"

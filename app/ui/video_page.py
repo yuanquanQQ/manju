@@ -1094,6 +1094,9 @@ class VideoGenerationPage(QWidget):
             "handle_frames": shot.handle_frames,
             "candidate_count": shot.candidate_count,
             "duration_seconds": shot.duration_seconds,
+            "continuity_group": shot.continuity_group,
+            "cast_signature": shot.cast_signature,
+            "speaker": shot.speaker,
         }
 
     @staticmethod

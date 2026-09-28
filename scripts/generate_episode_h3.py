@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -12,7 +13,7 @@ from app.domain.video import EpisodeClipSpec, VideoRenderSpec
 from app.services.desktop_service import DesktopProjectService
 from app.services.gpu_service import GpuConnection, GpuServerService
 from app.services.video_service import VideoRenderService
-from workflows.minimax_h3.generate_video import H3_MODEL, H3_TEXT_ENCODER, normalize_frame_count
+from workflows.minimax_h3.generate_video import H3_MODEL, H3_TEXT_ENCODER
 
 H3_GENERATION_REVISION = "h3_t8_chained_v1"
 
@@ -146,6 +147,17 @@ def _native_dialogue_prompt(shot: dict, *, compact: bool = False) -> str:
     return prompt
 
 
+def _shot_speaker(shot: dict) -> str:
+    """Return the normalized speaker identity used for audio continuity."""
+    audio = shot.get("audio_generation") or {}
+    speaker = str(audio.get("speaker") or "").strip()
+    if speaker:
+        return speaker
+    raw = str(shot.get("dialogue") or "").strip()
+    match = re.match(r"^([^：:]{1,40})[：:]", raw)
+    return match.group(1).strip() if match else ""
+
+
 def _video_spec(project_root: Path, episode_number: int, shot: dict) -> VideoRenderSpec:
     video = shot.get("video_generation") or {}
     source = (project_root / str(video.get("source_image") or "")).resolve()
@@ -265,6 +277,7 @@ def run(
     # drive_audio) so the voice timbre and cadence carry across the boundary.
     video_service = VideoRenderService()
     previous_video_path: Path | None = None
+    previous_speaker = ""
     previous_group_id = ""
     previous_cast_signature = ""
     chained_dir = project_root / "production" / "video_inputs" / f"episode_{episode_number:03d}"
@@ -283,6 +296,7 @@ def run(
             )
             # A skipped shot still yields a last frame for the next shot.
             previous_video_path = existing[0]
+            previous_speaker = _shot_speaker(shot)
             previous_group_id, previous_cast_signature = _continuity_keys(shot)
             print(f"[SKIP] shot={shot_number:03d} valid_h3_candidate", flush=True)
             continue
@@ -324,7 +338,11 @@ def run(
         if should_chain:
             chained_frame = chained_dir / f"shot_{shot_number:03d}_chained.png"
             chained_audio = chained_dir / f"shot_{shot_number:03d}_chained_ref.wav"
-            frame_count = normalize_frame_count(round(spec.duration_seconds * 24))
+            # The source is the previous clip, so its duration/frame count—not
+            # the current shot's requested duration—must drive exact-frame seek.
+            # Using the current duration can seek past EOF and silently disable
+            # chaining for clips with different lengths.
+            frame_count = None
             updates: dict = {}
             if video_service.extract_last_frame(
                 previous_video_path, chained_frame, frame_count=frame_count
@@ -344,7 +362,8 @@ def run(
                 )
             # Extract the trailing audio as reference_audio (T8 drive_audio) so
             # the model inherits the previous shot's voice timbre and cadence.
-            if video_service.extract_last_audio(
+            current_speaker = _shot_speaker(shot)
+            if previous_speaker and current_speaker and previous_speaker == current_speaker and video_service.extract_last_audio(
                 previous_video_path, chained_audio, seconds=2.0
             ):
                 updates["reference_audio"] = chained_audio
@@ -407,6 +426,7 @@ def run(
         # The most recent candidate's clip feeds the next shot's first frame.
         if batch.clips:
             previous_video_path = batch.clips[-1].video_path
+            previous_speaker = _shot_speaker(shot)
             previous_group_id, previous_cast_signature = _continuity_keys(shot)
         episode = _read_episode(episode_path)
         shots = sorted(episode.get("shots") or [], key=lambda item: item["shot_number"])

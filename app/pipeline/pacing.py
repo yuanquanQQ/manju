@@ -25,8 +25,21 @@ def pacing_target(
     *,
     event_count: int = 0,
     dialogue_count: int = 0,
+    planned_shots: int = 0,
+    planned_duration_seconds: float = 0.0,
 ) -> EpisodePacingTarget:
     """Choose a dense short-drama target while keeping generation affordable."""
+
+    if planned_shots > 0 and planned_duration_seconds > 0:
+        target_shots = max(6, min(48, planned_shots))
+        target_duration = max(15.0, min(180.0, planned_duration_seconds))
+        return EpisodePacingTarget(
+            min_shots=max(4, target_shots - 2),
+            target_shots=target_shots,
+            max_shots=min(52, target_shots + 3),
+            min_duration_seconds=round(max(12.0, target_duration * 0.85), 2),
+            target_duration_seconds=round(target_duration, 2),
+        )
 
     source_target = 18 + max(0, character_count - 1800) // 350
     narrative_target = 12 + event_count * 2 + min(dialogue_count, 6)
